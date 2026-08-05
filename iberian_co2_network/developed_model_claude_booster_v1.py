@@ -16,7 +16,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m = pyo.ConcreteModel(name="Iberian CCS network")
 
     # Definition of the capture and utilization target and tolerance
-    THETA = 0.1
+    THETA = 1.0
     TOL_P = 0.02  # ±2%
     m.THETA = pyo.Param(initialize=THETA)
 
@@ -46,6 +46,12 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     m.D = pyo.Set(initialize=data["D"])
     m.T = pyo.Set(initialize=data["T"], ordered=True)
+
+    # Onshore booster capacity stages (20%, 40%, 60%, 80%, 100% of the pipeline's design capacity)
+    m.BST = pyo.Set(initialize=[1, 2, 3, 4, 5])
+    m.boost_stage_frac = pyo.Param(
+        m.BST, initialize={1: 0.2, 2: 0.4, 3: 0.6, 4: 0.8, 5: 1.0}, within=pyo.PercentFraction
+    )
 
     # Helpers: use data dicts directly
     IN = data["IN"]
@@ -82,6 +88,11 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.w_boost_on1 = pyo.Var(m.P_on, m.T, m.W, domain=pyo.NonNegativeReals)
     m.w_boost_on2 = pyo.Var(m.P_on, m.T, m.W, domain=pyo.NonNegativeReals)
     m.w_boost_off = pyo.Var(m.P_off, m.T, m.W, domain=pyo.NonNegativeReals)
+
+    # Onshore booster operating-mode stage (20% steps of delta_p_boost); flow is not affected,
+    # only the pressure gain delivered and the resulting electricity OPEX.
+    m.b_opmode_on1 = pyo.Var(m.P_on, m.BST, m.T, m.W, domain=pyo.Binary)
+    m.b_opmode_on2 = pyo.Var(m.P_on, m.BST, m.T, m.W, domain=pyo.Binary)
 
     # Auxiliary variables (= 1 if, in scenario w and time step t, pipeline p is active with diameter d)
     m.u_on = pyo.Var(m.P_on, m.D, m.T, m.W, domain=pyo.UnitInterval)   # continuous in [0, 1]
@@ -120,15 +131,8 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.g = pyo.Param(m.E, m.T, initialize=data["emission"], within=pyo.NonNegativeReals)
 
     # Maximum storage capacity at sinks (Mt)
-    #m.cap_store = pyo.Param(m.S, initialize=data["store_cap"], within=pyo.NonNegativeReals)
-    m.cap_store = pyo.Param(
-        m.S,
-        initialize={
-            k: float(str(v).replace(",", ".")) 
-            for k, v in data["store_cap"].items()
-        },
-        within=pyo.NonNegativeReals
-    )
+    m.cap_store = pyo.Param(m.S, initialize=data["store_cap"], within=pyo.NonNegativeReals)
+
     # Maximum utilization capacity (scenario-specific)
     m.g_cap = pyo.Param(m.K, m.T, m.W, initialize=data["g_cap"], within=pyo.NonNegativeReals)
 
@@ -377,6 +381,14 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     def brep_off_eff(m, p, t, w):
         return m.brep_off_P1[p, t] if p in m.P1_off else m.brep_off_P2[p, t, w]
 
+    # Selected onshore operating-mode stage fraction (0, 0.2, ..., 1.0); scales the pressure gain
+    # and electricity OPEX of an installed booster. b_opmode_on1/on2 are not P1/P2-split.
+    def capfrac_on1_eff(m, p, t, w):
+        return sum(m.boost_stage_frac[st] * m.b_opmode_on1[p, st, t, w] for st in m.BST)
+
+    def capfrac_on2_eff(m, p, t, w):
+        return sum(m.boost_stage_frac[st] * m.b_opmode_on2[p, st, t, w] for st in m.BST)
+
     # ------------------------------------------------------------------
     # 7) Activation expressions for pipelines (scenario-indexed because P2 depends on w)
     # ------------------------------------------------------------------
@@ -497,7 +509,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # Onshore pressure drop (far point)
     def onshore_pressure_low_rule(m, p, t, w):
         frict = sum(b_diam_on_eff(m, p, d, w) * m.dP_frict_far[p, d] for d in m.D)
-        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        nboost = capfrac_on1_eff(m, p, t, w) + capfrac_on2_eff(m, p, t, w)
         return (
             m.pi_dest[p, t, w]
             >= m.pi_orig[p, t, w] - m.dP_elev_far[p] - frict + Dpi * nboost - Mpi * (1 - m.act_on[p, t, w])
@@ -505,7 +517,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     def onshore_pressure_up_rule(m, p, t, w):
         frict = sum(b_diam_on_eff(m, p, d, w) * m.dP_frict_far[p, d] for d in m.D)
-        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        nboost = capfrac_on1_eff(m, p, t, w) + capfrac_on2_eff(m, p, t, w)
         return (
             m.pi_dest[p, t, w]
             <= m.pi_orig[p, t, w] - m.dP_elev_far[p] - frict + Dpi * nboost + Mpi * (1 - m.act_on[p, t, w])
@@ -535,7 +547,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # Minimum pressure at the highest point (onshore)
     def onshore_high_point_rule(m, p, t, w):
         frict = sum(b_diam_on_eff(m, p, d, w) * m.dP_frict_high[p, d] for d in m.D)
-        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        nboost = capfrac_on1_eff(m, p, t, w) + capfrac_on2_eff(m, p, t, w)
         return (
             m.pi_orig[p, t, w]
             >= pmin + m.dP_elev_high[p] + frict - Dpi * nboost - Mpi * (1 - m.act_on[p, t, w])
@@ -706,6 +718,18 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     )
     m.BoosterOnshoreSequence_P2 = pyo.Constraint(
         m.P2_on, m.T, m.W, rule=lambda m, p, t, w: m.brep_on2_P2[p, t, w] <= m.brep_on1_P2[p, t, w]
+    )
+
+    # Onshore operating-mode stage: exactly one of the 5 stages (20/40/60/80/100%) is selected
+    # in a period/scenario iff the corresponding booster is installed; determines the pressure
+    # gain actually delivered (see section 9) and the electricity OPEX (see section 19).
+    m.OpModeChoiceOn1 = pyo.Constraint(
+        m.P_on, m.T, m.W,
+        rule=lambda m, p, t, w: sum(m.b_opmode_on1[p, st, t, w] for st in m.BST) == brep_on1_eff(m, p, t, w)
+    )
+    m.OpModeChoiceOn2 = pyo.Constraint(
+        m.P_on, m.T, m.W,
+        rule=lambda m, p, t, w: sum(m.b_opmode_on2[p, st, t, w] for st in m.BST) == brep_on2_eff(m, p, t, w)
     )
 
     # ------------------------------------------------------------------
@@ -1007,35 +1031,57 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     # ------------------------------------------------------------------
     # 19) Linearization of booster-flow products: w_boost_* = q * b_booster_*
+    #     Onshore boosters (on1/on2) now deliver a *staged pressure boost*
+    #     (see section 9/11 for b_opmode_on1/on2 and the resulting pressure gain);
+    #     the flow itself is unaffected. Electricity OPEX (w_boost_on1/on2) scales
+    #     with both the actual flow AND the chosen stage fraction, i.e.
+    #     w_boost_on1 = q_on * capfrac_on1 (capfrac_on1 in {0, 0.2, ..., 1.0}).
+    #     Offshore stays as the original all-or-nothing linearization.
     # ------------------------------------------------------------------
     Uq = m.M_flow
 
-    # Onshore: booster 1
-    m.WOn1UB1 = pyo.Constraint(
-        m.P_on, m.T, m.W,
-        rule=lambda m, p, t, w: m.w_boost_on1[p, t, w] <= Uq * brep_on1_eff(m, p, t, w)
-    )
-    m.WOn1UB2 = pyo.Constraint(
-        m.P_on, m.T, m.W,
-        rule=lambda m, p, t, w: m.w_boost_on1[p, t, w] <= m.q_on[p, t, w]
-    )
-    m.WOn1LB = pyo.Constraint(
-        m.P_on, m.T, m.W,
-        rule=lambda m, p, t, w: m.w_boost_on1[p, t, w] >= m.q_on[p, t, w] - Uq * (1 - brep_on1_eff(m, p, t, w))
-    )
+    # Auxiliary z_on1/on2[p, st, t, w] = q_on * b_opmode_on1/on2[p, st, t, w] (McCormick)
+    m.z_opflow_on1 = pyo.Var(m.P_on, m.BST, m.T, m.W, domain=pyo.NonNegativeReals)
+    m.z_opflow_on2 = pyo.Var(m.P_on, m.BST, m.T, m.W, domain=pyo.NonNegativeReals)
 
-    # Onshore: booster 2
-    m.WOn2UB1 = pyo.Constraint(
+    def _zopflow_on1_ub1(m, p, st, t, w):
+        return m.z_opflow_on1[p, st, t, w] <= Uq * m.b_opmode_on1[p, st, t, w]
+
+    def _zopflow_on1_ub2(m, p, st, t, w):
+        return m.z_opflow_on1[p, st, t, w] <= m.q_on[p, t, w]
+
+    def _zopflow_on1_lb(m, p, st, t, w):
+        return m.z_opflow_on1[p, st, t, w] >= m.q_on[p, t, w] - Uq * (1 - m.b_opmode_on1[p, st, t, w])
+
+    m.ZOpFlowOn1_ub1 = pyo.Constraint(m.P_on, m.BST, m.T, m.W, rule=_zopflow_on1_ub1)
+    m.ZOpFlowOn1_ub2 = pyo.Constraint(m.P_on, m.BST, m.T, m.W, rule=_zopflow_on1_ub2)
+    m.ZOpFlowOn1_lb  = pyo.Constraint(m.P_on, m.BST, m.T, m.W, rule=_zopflow_on1_lb)
+
+    def _zopflow_on2_ub1(m, p, st, t, w):
+        return m.z_opflow_on2[p, st, t, w] <= Uq * m.b_opmode_on2[p, st, t, w]
+
+    def _zopflow_on2_ub2(m, p, st, t, w):
+        return m.z_opflow_on2[p, st, t, w] <= m.q_on[p, t, w]
+
+    def _zopflow_on2_lb(m, p, st, t, w):
+        return m.z_opflow_on2[p, st, t, w] >= m.q_on[p, t, w] - Uq * (1 - m.b_opmode_on2[p, st, t, w])
+
+    m.ZOpFlowOn2_ub1 = pyo.Constraint(m.P_on, m.BST, m.T, m.W, rule=_zopflow_on2_ub1)
+    m.ZOpFlowOn2_ub2 = pyo.Constraint(m.P_on, m.BST, m.T, m.W, rule=_zopflow_on2_ub2)
+    m.ZOpFlowOn2_lb  = pyo.Constraint(m.P_on, m.BST, m.T, m.W, rule=_zopflow_on2_lb)
+
+    # w_boost_on1/on2 = q_on * capfrac_on1/on2 (electricity OPEX basis; flow itself untouched)
+    m.WOn1Eq = pyo.Constraint(
         m.P_on, m.T, m.W,
-        rule=lambda m, p, t, w: m.w_boost_on2[p, t, w] <= Uq * brep_on2_eff(m, p, t, w)
+        rule=lambda m, p, t, w: m.w_boost_on1[p, t, w] == sum(
+            m.boost_stage_frac[st] * m.z_opflow_on1[p, st, t, w] for st in m.BST
+        )
     )
-    m.WOn2UB2 = pyo.Constraint(
+    m.WOn2Eq = pyo.Constraint(
         m.P_on, m.T, m.W,
-        rule=lambda m, p, t, w: m.w_boost_on2[p, t, w] <= m.q_on[p, t, w]
-    )
-    m.WOn2LB = pyo.Constraint(
-        m.P_on, m.T, m.W,
-        rule=lambda m, p, t, w: m.w_boost_on2[p, t, w] >= m.q_on[p, t, w] - Uq * (1 - brep_on2_eff(m, p, t, w))
+        rule=lambda m, p, t, w: m.w_boost_on2[p, t, w] == sum(
+            m.boost_stage_frac[st] * m.z_opflow_on2[p, st, t, w] for st in m.BST
+        )
     )
 
     # Offshore: single booster
@@ -1305,7 +1351,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
             return sum(m.qmax[d] * m.b_diam_off_P2[p, d, w] for d in m.D)
         return 0.0
 
-    # P1 booster OPEX linearization constraints
+    # P1 booster OPEX linearization constraints (installed = full pipe design capacity)
     def _boostcap_on1_P1_ub1(m, p, t):
         return m.w_boostcap_on1_P1[p, t] <= pipe_cap_P1(m, p)
 

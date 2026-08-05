@@ -111,6 +111,20 @@ def _brep_off(m, p, t, w):
     return m.brep_off_P1[p, t] if p in m.P1_off else m.brep_off_P2[p, t, w]
 
 
+def _capfrac_on1(m, p, t, w):
+    """Selected onshore operating-mode stage fraction (0, 0.2, ..., 1.0) for booster 1."""
+    if not hasattr(m, "b_opmode_on1"):
+        return 0.0
+    return sum(value(m.boost_stage_frac[st]) * value(m.b_opmode_on1[p, st, t, w]) for st in m.BST)
+
+
+def _capfrac_on2(m, p, t, w):
+    """Selected onshore operating-mode stage fraction (0, 0.2, ..., 1.0) for booster 2."""
+    if not hasattr(m, "b_opmode_on2"):
+        return 0.0
+    return sum(value(m.boost_stage_frac[st]) * value(m.b_opmode_on2[p, st, t, w]) for st in m.BST)
+
+
 # ---------------------------------------------------------------------------
 # 1) PIPE SUMMARY TABLE (per scenario)
 # ---------------------------------------------------------------------------
@@ -174,11 +188,20 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
 
         # Pressures at installation year (use the actual model values)
         pi_init = pi_high = pi_final = pi_lowest = None
+        actual_dp_boost = None
         if installed and year != "":
             t_match = _t_from_year(m, year)
             if t_match is not None:
                 pi_init = value(m.pi_orig[p, t_match, w])
                 pi_final = value(m.pi_dest[p, t_match, w])
+
+                # Actual pressure gain delivered by the installed booster(s), accounting for the
+                # selected 20% operating-mode stage(s) on onshore pipes (offshore stays all-or-nothing).
+                if is_on:
+                    nboost_frac = _capfrac_on1(m, p, t_match, w) + _capfrac_on2(m, p, t_match, w)
+                else:
+                    nboost_frac = value(_brep_off(m, p, t_match, w))
+                actual_dp_boost = dp_boost * nboost_frac
 
                 # Compute an approximate "high point" pressure (only meaningful for onshore)
                 if is_on and diam_selected is not None:
@@ -247,7 +270,7 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
             "Number of boosters": n_boost if installed else None,
             "Installation Year": year if installed else None,
             "Present Value Cost [M€]": capex if installed else None,
-            "Booster delta pressure [bar]": dp_boost if installed else None,
+            "Booster delta pressure [bar]": actual_dp_boost if installed else None,
         }
         rec.update(flow_cols)
         records.append(rec)

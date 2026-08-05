@@ -32,11 +32,11 @@ UNCERTAIN_SINK_THRESHOLD = 1_000        # Mt CO2 (uncertain sinks) (set to 1000)
 SINK_THRESHOLD = 15                     # Mt CO2 (confirmed sinks) (set to 15)
 
 # Spain and Portugal GeoJSON files loading
-spain_prov = gpd.read_file("spain-provinces.geojson") # only for altitudes approach
-spain = gpd.read_file("spain.json")
-portugal = gpd.read_file("portugal.json")
-france = gpd.read_file("france.json")
-andorra = gpd.read_file("andorra.json")
+spain_prov = gpd.read_file("data/spain-provinces.geojson") # only for altitudes approach
+spain = gpd.read_file("sdata/pain.json")
+portugal = gpd.read_file("data/portugal.json")
+france = gpd.read_file("data/france.json")
+andorra = gpd.read_file("data/andorra.json")
 #morocco = gpd.read_file("data/morocco.json")
 #algeria = gpd.read_file("data/algeria.json")
 

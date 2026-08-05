@@ -38,7 +38,7 @@ avg_portugal_emission_annual_variation_perc = ((portugal_emissions_from_power_pl
 
 gdp_growth_rate = 1.4  # Average GDP growth rate per year (1.4%)
 
-emissions_df = pd.read_excel('Spanish and Portuguese emissions and sinks database.xlsx', sheet_name='2020 Spain + 2017 Portugal em.')  # Read emissions data from Excel file
+emissions_df = pd.read_excel('data/Spanish and Portuguese emissions and sinks database.xlsx', sheet_name='2020 Spain + 2017 Portugal em.')  # Read emissions data from Excel file
 
 years = list(range(2026, 2051))
 
@@ -77,7 +77,7 @@ emissions_projection_df = pd.concat([emissions_projection_df, projections_df], a
 # print(emissions_projection_df.tail(50))
 
 # Read cluster mapping
-cluster_map_df = pd.read_excel('iberian_co2_network_data.xlsx', sheet_name='Emissions clustering map')
+cluster_map_df = pd.read_excel('data/iberian_co2_network_data.xlsx', sheet_name='Emissions clustering map')
 
 # Merge with emissions projections
 emissions_projection_df = (
@@ -423,7 +423,7 @@ This cost value (2010) is then scaled to the current market (2024) for different
 ###############################
 ###############################
 
-hicp_df = pd.read_excel('model_parameters.xlsx', sheet_name='HICP') # Read HICP data from Excel file
+hicp_df = pd.read_excel('data/model_parameters.xlsx', sheet_name='HICP') # Read HICP data from Excel file
 hicp_df.columns = ["DATE", "TIME_PERIOD", "HICP"]
 hicp_df["DATE"] = pd.to_datetime(hicp_df["DATE"])
 
@@ -751,7 +751,7 @@ In the first years (2026-2030), only projects on a national scale are developed.
 
 """
 
-max_trade_flows_df = pd.read_excel('model_parameters.xlsx', sheet_name='Max. trading flows') # Read max flows data from Excel file
+max_trade_flows_df = pd.read_excel('data/model_parameters.xlsx', sheet_name='Max. trading flows') # Read max flows data from Excel file
 
 # print(max_trade_flows_df)
 
@@ -770,7 +770,7 @@ This factor is then applied to all the diameters under study, thus obtaining the
 
 """
 
-paper_flow_df = pd.read_excel('model_parameters.xlsx', sheet_name='Max flows') # Read max flows data from Excel file
+paper_flow_df = pd.read_excel('data/model_parameters.xlsx', sheet_name='Max flows') # Read max flows data from Excel file
 
 co2_density = 700  # kg/m³, approximate density of CO₂ at transport conditions
 seconds_in_a_year = 365 * 24 * 3600  # s
@@ -872,7 +872,7 @@ CALCULATION OF ALL THE PRESSURE DROP PARAMETERS FOR THE PIPELINE CANDIDATES DATA
 
 """
 
-candidate_pipelines_gdf = pd.read_excel('iberian_co2_network_data.xlsx', sheet_name='Pipeline candidates')  # Read candidate pipelines data from Excel file
+candidate_pipelines_gdf = pd.read_excel('data/iberian_co2_network_data.xlsx', sheet_name='Pipeline candidates')  # Read candidate pipelines data from Excel file
 
 candidate_pipelines_gdf["Node connection"] = candidate_pipelines_gdf["Node connection"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 candidate_pipelines_gdf["Connection type"] = candidate_pipelines_gdf["Connection type"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)  # Convert string representation of lists to actual lists
@@ -1075,7 +1075,7 @@ The costs are given in £/tCO2, so they are converted to €/tCO2 using the curr
 
 """
 
-complete_nodes_gdf = pd.read_excel('iberian_co2_network_data.xlsx', sheet_name='Nodes')  # Read nodes data from Excel file
+complete_nodes_gdf = pd.read_excel('data/iberian_co2_network_data.xlsx', sheet_name='Nodes')  # Read nodes data from Excel file
 
 complete_nodes_gdf['Total CO2 emissions'] = (complete_nodes_gdf['Total CO2 emissions'].astype(str).str.replace(',', '.', regex=False).astype(float))
 
@@ -1840,7 +1840,7 @@ df_ccus_5yr = df_ccus_5yr.rename(
 ####################################################################################################################################################################################################################################################
 ####################################################################################################################################################################################################################################################
 
-output_excel = "PV_complete_parameters_definition.xlsx"
+output_excel = "data/PV_complete_parameters_definition.xlsx"
 
 with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
     node_emissions_5yr_df.to_excel(writer, sheet_name="Emissions projections", index=False)

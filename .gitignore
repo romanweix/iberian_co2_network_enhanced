@@ -240,3 +240,6 @@ eval "$(ssh-agent -s)".pub
 roman.pub
 roman
 tmp_dem/
+output_developed_plots/
+merged_srtm.tif
+full_model.lp
