@@ -243,3 +243,4 @@ tmp_dem/
 output_developed_plots/
 merged_srtm.tif
 full_model.lp
+output_developed_model_plots_results/
