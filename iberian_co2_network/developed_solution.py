@@ -111,6 +111,20 @@ def _brep_off(m, p, t, w):
     return m.brep_off_P1[p, t] if p in m.P1_off else m.brep_off_P2[p, t, w]
 
 
+def _capfrac_on1(m, p, t, w):
+    """Selected onshore operating-mode stage fraction (0, 0.2, ..., 1.0) for booster 1."""
+    if not hasattr(m, "b_opmode_on1"):
+        return 0.0
+    return sum(value(m.boost_stage_frac[st]) * value(m.b_opmode_on1[p, st, t, w]) for st in m.BST)
+
+
+def _capfrac_on2(m, p, t, w):
+    """Selected onshore operating-mode stage fraction (0, 0.2, ..., 1.0) for booster 2."""
+    if not hasattr(m, "b_opmode_on2"):
+        return 0.0
+    return sum(value(m.boost_stage_frac[st]) * value(m.b_opmode_on2[p, st, t, w]) for st in m.BST)
+
+
 # ---------------------------------------------------------------------------
 # 1) PIPE SUMMARY TABLE (per scenario)
 # ---------------------------------------------------------------------------
@@ -174,11 +188,20 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
 
         # Pressures at installation year (use the actual model values)
         pi_init = pi_high = pi_final = pi_lowest = None
+        actual_dp_boost = None
         if installed and year != "":
             t_match = _t_from_year(m, year)
             if t_match is not None:
                 pi_init = value(m.pi_orig[p, t_match, w])
                 pi_final = value(m.pi_dest[p, t_match, w])
+
+                # Actual pressure gain delivered by the installed booster(s), accounting for the
+                # selected 20% operating-mode stage(s) on onshore pipes (offshore stays all-or-nothing).
+                if is_on:
+                    nboost_frac = _capfrac_on1(m, p, t_match, w) + _capfrac_on2(m, p, t_match, w)
+                else:
+                    nboost_frac = value(_brep_off(m, p, t_match, w))
+                actual_dp_boost = dp_boost * nboost_frac
 
                 # Compute an approximate "high point" pressure (only meaningful for onshore)
                 if is_on and diam_selected is not None:
@@ -216,6 +239,15 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
             if p in P2_off:
                 capex += sum(value(m.c_pipe_off_P2[p, t, w]) for t in m.T)
 
+        # Insulation status and its share of the CAPEX above (onshore only)
+        pen_ins_val = value(m.pen_ins[p])
+        insulated = bool(is_on and pen_ins_val > 1.0 + 1e-9)
+        insulation_cost = (
+            capex * (pen_ins_val - 1.0) / pen_ins_val
+            if (installed and insulated)
+            else 0.0
+        )
+
         # Connections and node types
         i_node = value(m.start[p])
         j_node = value(m.end[p])
@@ -247,7 +279,9 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
             "Number of boosters": n_boost if installed else None,
             "Installation Year": year if installed else None,
             "Present Value Cost [M€]": capex if installed else None,
-            "Booster delta pressure [bar]": dp_boost if installed else None,
+            "Insulated": insulated if is_on else None,
+            "Insulation cost [M€]": insulation_cost if installed else None,
+            "Booster delta pressure [bar]": actual_dp_boost if installed else None,
         }
         rec.update(flow_cols)
         records.append(rec)
@@ -445,6 +479,36 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
                     * value(m.L_on[p])
                     * value(m.pen_city[p])
                     * value(m.pen_slope[p])
+                    * value(m.pen_ins[p])
+                    * bd
+                    * act
+                )
+        return total
+
+    def opex_pipe_on_insulation_year(yr):
+        """Portion of opex_pipe_on_year attributable to the insulation surcharge (pen_ins - 1)."""
+        t = _t(yr)
+        if t is None:
+            return 0.0
+        total = 0.0
+        for p in m.P_on:
+            act = value(m.act_on[p, t, w])
+            if act <= 1e-12:
+                continue
+            pen_ins_extra = value(m.pen_ins[p]) - 1.0
+            if pen_ins_extra <= 1e-12:
+                continue
+            for d in m.D:
+                bd = value(_b_diam_on(m, p, d, w))
+                if bd <= 1e-12:
+                    continue
+                total += (
+                    years_per_step
+                    * value(m.cop_on[d, t])
+                    * value(m.L_on[p])
+                    * value(m.pen_city[p])
+                    * value(m.pen_slope[p])
+                    * pen_ins_extra
                     * bd
                     * act
                 )
@@ -555,6 +619,7 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
         ("CAPEX initial boosting stations", total_by_year(capex_init_year)),
         ("CAPEX additional boosting stations", total_by_year(capex_boost_year)),
         ("OPEX onshore pipe", total_by_year(opex_pipe_on_year)),
+        ("OPEX onshore pipe (insulation only)", total_by_year(opex_pipe_on_insulation_year)),
         ("OPEX offshore pipe", total_by_year(opex_pipe_off_year)),
         ("OPEX initial boosting stations", total_by_year(opex_init_year)),
         ("OPEX additional boosting stations", total_by_year(opex_boost_year)),
@@ -565,6 +630,10 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
         ("CO2 sales revenue", total_by_year(sale_revenue_year)),
     ]
 
+    # Memo rows are informational breakdowns of another row's value and must be
+    # excluded from the TOTAL, since their amount is already counted there.
+    memo_only = {"OPEX onshore pipe (insulation only)"}
+
     recs = []
     for name, dic in rows:
         rec = {"Concept": name}
@@ -572,7 +641,7 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
         rec["Total"] = sum(dic.values())
         recs.append(rec)
 
-    totals = {yr: sum(r[yr] for r in recs) for yr in years}
+    totals = {yr: sum(r[yr] for r in recs if r["Concept"] not in memo_only) for yr in years}
     totals["Concept"] = "TOTAL"
     totals["Total"] = sum(totals[yr] for yr in years)
     recs.append(totals)

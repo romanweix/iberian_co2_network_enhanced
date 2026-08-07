@@ -120,8 +120,15 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.g = pyo.Param(m.E, m.T, initialize=data["emission"], within=pyo.NonNegativeReals)
 
     # Maximum storage capacity at sinks (Mt)
-    m.cap_store = pyo.Param(m.S, initialize=data["store_cap"], within=pyo.NonNegativeReals)
-
+    #m.cap_store = pyo.Param(m.S, initialize=data["store_cap"], within=pyo.NonNegativeReals)
+    m.cap_store = pyo.Param(
+        m.S,
+        initialize={
+            k: float(str(v).replace(",", ".")) 
+            for k, v in data["store_cap"].items()
+        },
+        within=pyo.NonNegativeReals
+    )
     # Maximum utilization capacity (scenario-specific)
     m.g_cap = pyo.Param(m.K, m.T, m.W, initialize=data["g_cap"], within=pyo.NonNegativeReals)
 
@@ -215,6 +222,9 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # Simple penalties
     m.pen_city = pyo.Param(m.P, initialize=data["pen_city"], within=pyo.NonNegativeReals)
     m.pen_slope = pyo.Param(m.P, initialize=data["pen_slope"], within=pyo.NonNegativeReals)
+    # Insulation cost penalty factor (onshore only): 1.0 for non-insulated pipes,
+    # (1 + ONSHORE_INSULATION_SURCHARGE_PCT / 100) for pipes flagged as insulated in data.py
+    m.pen_ins = pyo.Param(m.P, initialize=data["pen_ins"], within=pyo.NonNegativeReals)
 
     m.tmethod_p = pyo.Param(m.P, initialize=data["tmethod_p"], within=pyo.Any)
     m.stage_p = pyo.Param(m.P, initialize=data["stage_p"], within=pyo.Any)
@@ -1089,7 +1099,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     capex_max_on = max(
         data["cins_on"][d, t]
         * max(data["L"][p] for p in data["P_on"])
-        * max(data["pen_city"][p] * data["pen_slope"][p] for p in data["P_on"])
+        * max(data["pen_city"][p] * data["pen_slope"][p] * data["pen_ins"][p] for p in data["P_on"])
         for d in data["D"] for t in data["T"]
     ) + 1e-3
 
@@ -1109,14 +1119,14 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # P1 onshore CAPEX (paid only in the build year)
     def cap_on_P1_ub(m, p, t):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P1[p, d]
+            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P1[p, d]
             for d in m.D
         )
         return m.c_pipe_on_P1[p, t] <= expr
 
     def cap_on_P1_lb(m, p, t):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P1[p, d]
+            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P1[p, d]
             for d in m.D
         )
         return m.c_pipe_on_P1[p, t] >= expr - capex_max_on * (1 - m.z_on_P1[p, t])
@@ -1153,14 +1163,14 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # P2 onshore CAPEX (paid only in the build year)
     def cap_on_P2_ub(m, p, t, w):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P2[p, d, w]
+            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P2[p, d, w]
             for d in m.D
         )
         return m.c_pipe_on_P2[p, t, w] <= expr
 
     def cap_on_P2_lb(m, p, t, w):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P2[p, d, w]
+            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P2[p, d, w]
             for d in m.D
         )
         return m.c_pipe_on_P2[p, t, w] >= expr - capex_max_on * (1 - m.z_on_P2[p, t, w])
@@ -1205,7 +1215,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # Pipeline OPEX (expected), scaled by years per step
     opex_pipe_on = years_per_step * sum(
         m.prob[w] * sum(
-            m.cop_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.u_on[p, d, t, w]
+            m.cop_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.u_on[p, d, t, w]
             for p in m.P_on for d in m.D for t in m.T
         )
         for w in m.W

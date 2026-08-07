@@ -14,7 +14,8 @@ from pyproj import Transformer
 # ==========================================================
 
 EXCEL = "iberian_co2_network_data.xlsx"
-DEM = "merged_srtm.tif"
+SHEETNAME = "Pipeline candidates"
+DEM = "merged_srtm_roman.tif"
 
 STEP = 500  # Meter
 
@@ -42,7 +43,11 @@ transformer = Transformer.from_crs(
 # Excel einlesen
 # ==========================================================
 
-df = pd.read_excel(EXCEL)
+df = pd.read_excel(EXCEL, sheet_name=SHEETNAME)
+
+# Nur Onshore-Pipelines
+df = df[df["Transport method"] == "Onshore"].reset_index(drop=True)
+
 total_rows = len(df)
 
 for idx, row in df.iterrows():
@@ -86,7 +91,8 @@ for idx, row in df.iterrows():
     # Temperaturkarte laden
     # ==========================================================
 
-    temp_ds = xr.open_dataset("era5_january_mean_last5years.nc")
+    temp_ds = xr.open_dataset("era5_january_mean_last5years.nc",
+                                  engine="netcdf4")
 
     # Variable automatisch finden
     temp_var = list(temp_ds.data_vars)[0]
@@ -166,11 +172,26 @@ for idx, row in df.iterrows():
     step = 500          # Schrittweite in m
     x = np.arange(0, line_3035.length + step, step)
 
-    # Durchmesser (m) und Massenstrom (Mt/Jahr)
-    diameters = np.array([0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]) 
-    #diameters = np.array([ 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]) 
-    m_dot_mt_year = np.array([1.7, 3.8, 6.7, 10.5, 15.2, 20.6, 26.9, 34.1, 42.1])
-    #m_dot_mt_year = np.array([ 3.8, 6.7, 10.5, 15.2, 20.6, 26.9, 34.1, 42.1])
+    # Durchmesser und Massenstrom (Mt/Jahr)
+    diameters_inch = np.array([6, 10, 14, 18, 22, 26, 30, 34, 38, 42]) 
+    diameters_m = diameters_inch * 0.0254
+
+    diameters_m_paper = np.array([0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    m_dot_mt_year_paper = np.array([1.7, 3.8, 6.7, 10.5, 15.2, 20.6, 26.9, 34.1, 42.1])
+
+    # Kreisflächen [m²]
+    area_paper = np.pi * (diameters_m_paper / 2)**2
+
+    # Massenfluss pro Fläche [Mt/(a·m²)]
+    m_dot_mt_year_area_paper = m_dot_mt_year_paper / area_paper
+
+    mean_m_dot_mt_year_area_paper = np.mean(m_dot_mt_year_area_paper)
+
+    m_dot_mt_year = mean_m_dot_mt_year_area_paper * (diameters_m / 2)**2 * np.pi
+
+    print(diameters_m)
+    print(m_dot_mt_year)
+    
     mdot_reduction_pcnt = 0.6
     m_dot_kg_s = mdot_reduction_pcnt * m_dot_mt_year * 1e9 / (365 * 24 * 3600)
     #[ 32.34398782, 72.29832572, 127.47336377, 199.7716895, 
@@ -203,21 +224,21 @@ for idx, row in df.iterrows():
         subplots_nr = 2
         height_ratios = [2, 1]
     fig, axes = plt.subplots(subplots_nr, len(u_values), figsize=(18, 14), gridspec_kw={'height_ratios': height_ratios}, sharex=True)
-    colors = plt.cm.plasma(np.linspace(0, 0.8, len(diameters)))
+    colors = plt.cm.plasma(np.linspace(0, 0.8, len(diameters_m)))
 
     # Konsolen-Header formatieren (dp = Druckänderung, dT = Temperaturänderung)
-    header = f"{'U-Wert':<7} | {'D (m)':<5} | {'x_End':<5} | {'dp_End':<7} | {'dT_End':<7} | {'x_dpmax':<7} | {'dp_max':<7} | {'dT_dpmax':<8} | {'x_Tmin':<6} | {'dp_Tmin':<7} | {'dT_Tmin':<7}"
+    header = f"{'U-Wert':<7} | {'D (inch)':<5} | {'x_End':<5} | {'dp_End':<7} | {'dT_End':<7} | {'x_dpmax':<7} | {'dp_max':<7} | {'dT_dpmax':<8} | {'x_Tmin':<6} | {'dp_Tmin':<7} | {'dT_Tmin':<7}"
     print(header)
     print("-" * len(header))
 
     for col, u_val in enumerate(u_values):
-        for i, (d, m_dot) in enumerate(zip(diameters, m_dot_kg_s)):
+        for i, (d_m, d_inch, m_dot) in enumerate(zip(diameters_m, diameters_inch, m_dot_kg_s)):
             p = np.zeros_like(x)
             t_in = np.zeros_like(x).astype(np.float64)
             p[0] = p_start
             t_in[0] = t_start
             
-            area = np.pi * (d**2) / 4
+            area = np.pi * (d_m**2) / 4
             
             for j in range(len(x) - 1):
                 if activate_temp and rho_dynamic:
@@ -242,15 +263,15 @@ for idx, row in df.iterrows():
                 
                 v =  m_dot / (rho_curr * area)
                 
-                re = (rho_curr * v * d) / mu_dynamic
-                f = (2 * np.log10(epsilon/3.7/d + 5.74/re**0.9))**-2 
-                dp_friction = f * (step / d) * (rho_curr * v**2 / 2)
+                re = (rho_curr * v * d_m) / mu_dynamic
+                f = (2 * np.log10(epsilon/3.7/d_m + 5.74/re**0.9))**-2 
+                dp_friction = f * (step / d_m) * (rho_curr * v**2 / 2)
                 dp_gravity = rho_curr * 9.81 * (h[j+1] - h[j])
                 
                 total_dp = dp_friction + dp_gravity
                 p[j+1] = p[j] - total_dp
                 
-                dq = u_val * (np.pi * d * step) * (t_ext_profile[j] - t_in[j])
+                dq = u_val * (np.pi * d_m * step) * (t_ext_profile[j] - t_in[j])
                 dt_ambient = dq / (m_dot * cp_curr)
                 dt_jt = mu_jt_curr * (-total_dp) 
                 
@@ -294,7 +315,7 @@ for idx, row in df.iterrows():
                 "Pipe ID": pipe_id,
                 "Longitude [km]": longitude,
                 "U-Wert [W/m^2/K]": u_val,
-                "D [m]": d,
+                "D [m]": d_inch,
                 "p_end [bar]": dp_ende_bar,
                 "t_end [°C]": dT_ende_c,
                 "p_max p[bar]": p[idx_p_min] / 1e5,
@@ -305,13 +326,13 @@ for idx, row in df.iterrows():
             })
 
             # Ausgabe in der Konsole
-            print(f"{u_val:<7} | {d:<5.1f} | {x_end_km:<5.0f} | {dp_ende_bar:<7.1f} | {dT_ende_c:<7.1f} | {x_dpmax_km:<7.1f} | {dp_max_bar:<7.1f} | {dT_dpmax_c:<8.1f} | {x_tmin_km:<6.1f} | {dp_tmin_bar:<7.1f} | {dT_tmin_c:<7.1f}")
+            print(f"{u_val:<7} | {d_inch:<5.1f} | {x_end_km:<5.0f} | {dp_ende_bar:<7.1f} | {dT_ende_c:<7.1f} | {x_dpmax_km:<7.1f} | {dp_max_bar:<7.1f} | {dT_dpmax_c:<8.1f} | {x_tmin_km:<6.1f} | {dp_tmin_bar:<7.1f} | {dT_tmin_c:<7.1f}")
 
 src.close()
 
 import pandas as pd
 
-file_path = "PV_complete_parameters_definition.xlsx"
+file_path = "sim_pipeline_candidates.xlsx"
 
 # deine berechneten Ergebnisse
 df_results = pd.DataFrame(cricital_points)
