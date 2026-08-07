@@ -1067,23 +1067,79 @@ cand_pipe_features_gdf['Slope penalty factor'] = (cand_pipe_features_gdf['Pipe I
 
 """
 
-CALCULATION OF THE INSULATION COST PENALTY FACTOR FOR THE PIPELINE CANDIDATES DATABASE
+ONSHORE PIPELINE INSULATION / TEMPERATURE-PRESSURE SIMULATION DATA
 
-Onshore pipelines can optionally be insulated, which increases their per-inch investment cost
-(COST_PER_INCH_EUR) by ONSHORE_INSULATION_SURCHARGE_PCT. The insulation status is a fixed
-input per pipeline (not an optimization decision): list the identifiers of the onshore
-pipelines that must be insulated in INSULATED_ONSHORE_PIPES below. The penalty factor is
-1.0 for non-insulated pipelines and (1 + ONSHORE_INSULATION_SURCHARGE_PCT / 100) for insulated ones.
+Onshore pipe insulation is now a per-diameter build decision (choose diameter d AND
+U-value u together), not a fixed per-pipeline property. For every combination of onshore
+pipeline, diameter and U-value (0.43 W/m^2/K = insulated, 2.0 W/m^2/K = not insulated),
+simulated pressure/temperature data give the pressure drop by the pipe end, the pressure
+at the critical (minimum-pressure) point, and the pressure at the coldest point. These
+replace the analytic Swamee-Jain/elevation-based dP_frict/dP_elev parameters for onshore
+pipelines (offshore pipelines are unaffected and keep the analytic approach).
+
+Expected input: sheet "Pipeline sim. results" in 'data/iberian_co2_network_data.xlsx',
+with columns 'Pipe ID', 'U-Wert [W/m^2/K]', 'D [inch]', 'p_end [bar]', 'p_max p[bar]',
+'t_min p [bar]' (one row per pipeline x diameter x U-value combination, diameters matching
+the existing `diameter_inch_str` set). The simulation itself (romans_playground/
+12_plot_pipeline_elevation_sim.py) was run with a fixed origin pressure of 150 bar
+(SIM_P_START_BAR below); p_max p / t_min p are absolute simulated pressures at the
+critical points and are converted here into pressure-drop-from-origin values so they can
+be combined with the model's free pi_orig variable exactly like the existing dP_frict/
+dP_elev drop parameters.
 
 """
 
-# Identifiers (as in 'Pipeline identifier' / 'Pipe ID') of onshore pipelines to build insulated
-INSULATED_ONSHORE_PIPES: set = set()
+U_VALUES = [0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+SIM_P_START_BAR = 150.0  # fixed origin pressure used by the pipeline simulation
 
-cand_pipe_features_gdf['Insulated'] = cand_pipe_features_gdf['Pipe ID'].isin(INSULATED_ONSHORE_PIPES).astype(int)
-cand_pipe_features_gdf['Insulation penalty factor'] = round(
-    1.0 + cand_pipe_features_gdf['Insulated'] * (ONSHORE_INSULATION_SURCHARGE_PCT / 100.0), 3
+pipe_sim_results_df = pd.read_excel(
+    'data/sim_pipeline_candidates.xlsx', sheet_name='Pipeline sim. results'
 )
+# D [inch] comes back as a number (e.g. 6.0); normalize to the same string keys as
+# `diameter_inch_str` ('6', '10', ...) instead of a bare .astype(str) which would
+# silently produce '6.0' and break every dict lookup against the D set.
+pipe_sim_results_df['D [inch]'] = pipe_sim_results_df['D [inch]'].round().astype(int).astype(str)
+
+# Pressure drop from origin to the pipe end (already a drop in the simulation output)
+Pi_dest = {
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): float(r['p_end [bar]'])
+    for _, r in pipe_sim_results_df.iterrows()
+}
+# Drop from origin to the critical minimum-pressure point along the pipe
+Pi_pmax = {
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_P_START_BAR - float(r['p_max p[bar]'])
+    for _, r in pipe_sim_results_df.iterrows()
+}
+# Drop from origin to the coldest point along the pipe
+Pi_theta = {
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_P_START_BAR - float(r['t_min p [bar]'])
+    for _, r in pipe_sim_results_df.iterrows()
+}
+
+# Temperature drops (same conversion logic as the Pi_* pressure drops above), using the
+# simulation's fixed origin temperature SIM_T_START_C = 40°C = theta_emit.
+SIM_T_START_C = 40.0
+
+# Temperature drop from origin to the pipe end (already a drop in the simulation output)
+Theta_dest = {
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): float(r['t_end [°C]'])
+    for _, r in pipe_sim_results_df.iterrows()
+}
+# Temperature drop from origin to the critical minimum-pressure point along the pipe
+Theta_pmax = {
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_T_START_C - float(r['p_max T [°C]'])
+    for _, r in pipe_sim_results_df.iterrows()
+}
+# Temperature drop from origin to the coldest point along the pipe
+Theta_cold = {
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_T_START_C - float(r['t_min T[°C]'])
+    for _, r in pipe_sim_results_df.iterrows()
+}
+
+# Insulated (u = 0.43) onshore pipe CAPEX/OPEX surcharge vs. non-insulated (u = 2.0),
+# applied on top of the base per-diameter cost (ONSHORE_INSULATION_SURCHARGE_PCT, in %)
+def _u_cost_factor(u_val: float) -> float:
+    return 1.0 + ONSHORE_INSULATION_SURCHARGE_PCT / 100.0 if u_val == 0.43 else 1.0
 
 
 
@@ -1886,10 +1942,6 @@ with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
     capture_injection_costs_pv_df.to_excel(writer, sheet_name="Capture & injection costs", index=False)
     df_ccus_5yr.to_excel(writer, sheet_name="CCUS targets", index=False)
 
-# attach simulation data from preprocessing
-sim_data_excel = pd.read_excel("data/sim_pipeline_candidate.xlsx", sheet_name="Pipeline sim. results")
-with pd.ExcelWriter(output_excel, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-    sim_data_excel.to_excel(writer, sheet_name="Pipeline sim. results", index=False)
 
 
 
@@ -2050,7 +2102,8 @@ def build_input_dict(
     allow_price = {int(r["Year"]): float(r.iloc[1])
                    for _, r in carbon_price_pv_df.iterrows() if int(r["Year"]) in years}
 
-    # 8) Pipe ΔP (elevation & friction) ----------------------------------
+    # 8) Pipe ΔP (elevation & friction) — offshore only; onshore uses the simulated
+    #    (pipe, diameter, U-value) pressure-drop parameters built above instead.
     dP_elev_high_raw = _pipes["High. elev. pres. drop [bar]"].astype(float)
     dP_elev_high = dP_elev_high_raw.clip(lower=0).to_dict()
     dP_elev_far  = _pipes["Fart. elev. pres. drop [bar]"].to_dict()
@@ -2089,9 +2142,20 @@ def build_input_dict(
                 if col in tmp.columns:
                     d[(d_in, t)] = float(r[col])
         return d
-    cins_on  = _df_to_costdict(pv_inv_onsh_pipe_df)
+
+    # Onshore CAPEX/OPEX now also depend on the chosen U-value (insulated vs. not),
+    # via the _u_cost_factor surcharge defined above.
+    def _df_to_costdict_u(df: pd.DataFrame) -> Dict[Tuple[Diameter, float, Year], float]:
+        base = _df_to_costdict(df)
+        out: Dict[Tuple[Diameter, float, Year], float] = {}
+        for (d_in, t), val in base.items():
+            for u_val in U_VALUES:
+                out[(d_in, u_val, t)] = val * _u_cost_factor(u_val)
+        return out
+
+    cins_on  = _df_to_costdict_u(pv_inv_onsh_pipe_df)
+    cop_on   = _df_to_costdict_u(pv_om_onsh_pipe_df)
     cins_off = _df_to_costdict(pv_inv_offsh_pipe_df)
-    cop_on   = _df_to_costdict(pv_om_onsh_pipe_df)
     cop_off  = _df_to_costdict(pv_om_offsh_pipe_df)
 
     # 12) Shipping costs --------------------------------------------------
@@ -2151,7 +2215,7 @@ def build_input_dict(
     data: Dict[str, Any] = {
         # Sets
         "E": E, "S": S, "A": A, "M": M, "K": K, "N": N,
-        "P_on": P_on, "P_off": P_off, "D": D, "T": T,
+        "P_on": P_on, "P_off": P_off, "D": D, "U": U_VALUES, "T": T,
         "P1_on": P1_on, "P2_on": P2_on, "P1_off": P1_off, "P2_off": P2_off,
 
         # Incidence
@@ -2167,9 +2231,10 @@ def build_input_dict(
         "start": start, "end": end_, "L": _pipes["Longitude [km]"].to_dict(), "Lh": _pipes["Distance until heighest point [km]"].to_dict(),
         "dP_elev_high": dP_elev_high, "dP_elev_far": dP_elev_far,
         "dP_frict_high": frict_high,  "dP_frict_far": frict_far,
+        "Pi_dest": Pi_dest, "Pi_pmax": Pi_pmax, "Pi_theta": Pi_theta,
+        "Theta_dest": Theta_dest, "Theta_pmax": Theta_pmax, "Theta_cold": Theta_cold,
         "pen_city": _pipes["City detour penalty factor"].to_dict(),
         "pen_slope": _pipes["Slope penalty factor"].to_dict(),
-        "pen_ins": _pipes["Insulation penalty factor"].to_dict(),
         "tmethod_p": tmethod_p, "stage_p": stage_p,
         "country_i": country_i, "country_j": country_j,
         "n1_type": n1_type, "n2_type": n2_type, "pipe_geom": pipe_geom,
@@ -2180,6 +2245,9 @@ def build_input_dict(
         # Pressure / flow constants
         "p_emit": 150.0, "delta_p_boost": 50.0, "p_min": 100.0,
         "M_flow": 150.0, "M_press": 250.0, "M_eur": 1500.0,
+
+        # Temperature constants (mirrors the pressure constants above)
+        "theta_emit": 40.0, "theta_min": 35.0, "delta_theta_boost": 10.0, "M_theta": 100.0,
 
         # Targets
         "seq_target": seq_target, "util_target": util_target,

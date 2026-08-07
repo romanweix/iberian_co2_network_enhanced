@@ -86,9 +86,9 @@ def _z_off(m, p, t, w):
     return m.z_off_P1[p, t] if p in m.P1_off else m.z_off_P2[p, t, w]
 
 
-def _b_diam_on(m, p, d, w):
-    """Effective diameter selection binary for onshore pipe p and diameter d in scenario w."""
-    return m.b_diam_on_P1[p, d] if p in m.P1_on else m.b_diam_on_P2[p, d, w]
+def _b_diam_on(m, p, d, u, w):
+    """Effective diameter/insulation selection binary for onshore pipe p, diameter d, U-value u in scenario w."""
+    return m.b_diam_on_P1[p, d, u] if p in m.P1_on else m.b_diam_on_P2[p, d, u, w]
 
 
 def _b_diam_off(m, p, d, w):
@@ -111,18 +111,6 @@ def _brep_off(m, p, t, w):
     return m.brep_off_P1[p, t] if p in m.P1_off else m.brep_off_P2[p, t, w]
 
 
-def _capfrac_on1(m, p, t, w):
-    """Selected onshore operating-mode stage fraction (0, 0.2, ..., 1.0) for booster 1."""
-    if not hasattr(m, "b_opmode_on1"):
-        return 0.0
-    return sum(value(m.boost_stage_frac[st]) * value(m.b_opmode_on1[p, st, t, w]) for st in m.BST)
-
-
-def _capfrac_on2(m, p, t, w):
-    """Selected onshore operating-mode stage fraction (0, 0.2, ..., 1.0) for booster 2."""
-    if not hasattr(m, "b_opmode_on2"):
-        return 0.0
-    return sum(value(m.boost_stage_frac[st]) * value(m.b_opmode_on2[p, st, t, w]) for st in m.BST)
 
 
 # ---------------------------------------------------------------------------
@@ -165,13 +153,22 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
         installed = 1 if install_years else 0
         year = install_years[0] if installed else ""
 
-        # Selected diameter
+        # Selected diameter (and, for onshore, insulation U-value)
         diam_selected = None
-        for d in m.D:
-            bd = value(_b_diam_on(m, p, d, w)) if is_on else value(_b_diam_off(m, p, d, w))
-            if bd > 0.5:
-                diam_selected = d
-                break
+        u_selected = None
+        if is_on:
+            for d in m.D:
+                for u in m.U:
+                    if value(_b_diam_on(m, p, d, u, w)) > 0.5:
+                        diam_selected, u_selected = d, u
+                        break
+                if diam_selected is not None:
+                    break
+        else:
+            for d in m.D:
+                if value(_b_diam_off(m, p, d, w)) > 0.5:
+                    diam_selected = d
+                    break
         diam_inch = _diameter_to_inch(m, diam_selected) if diam_selected is not None else ""
 
         # Boosters (max over horizon)
@@ -188,42 +185,45 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
 
         # Pressures at installation year (use the actual model values)
         pi_init = pi_high = pi_final = pi_lowest = None
+        theta_init = theta_pmax_pt = theta_final = theta_lowest = None
         actual_dp_boost = None
         if installed and year != "":
             t_match = _t_from_year(m, year)
             if t_match is not None:
                 pi_init = value(m.pi_orig[p, t_match, w])
                 pi_final = value(m.pi_dest[p, t_match, w])
+                theta_init = value(m.theta_orig[p, t_match, w])
+                theta_final = value(m.theta_dest[p, t_match, w])
 
-                # Actual pressure gain delivered by the installed booster(s), accounting for the
-                # selected 20% operating-mode stage(s) on onshore pipes (offshore stays all-or-nothing).
+                # Actual pressure gain delivered by the installed booster(s) (all-or-nothing)
                 if is_on:
-                    nboost_frac = _capfrac_on1(m, p, t_match, w) + _capfrac_on2(m, p, t_match, w)
+                    nboost_frac = value(_brep_on1(m, p, t_match, w)) + value(_brep_on2(m, p, t_match, w))
                 else:
                     nboost_frac = value(_brep_off(m, p, t_match, w))
                 actual_dp_boost = dp_boost * nboost_frac
 
-                # Compute an approximate "high point" pressure (only meaningful for onshore)
-                if is_on and diam_selected is not None:
-                    dp_fric_high = value(m.dP_frict_high[p, diam_selected])
-                    dp_elev_high = value(m.dP_elev_high[p])
-                    pi_high = pi_init - (dp_fric_high + dp_elev_high)
+                # Compute an approximate "high point" (critical minimum-pressure point) pressure,
+                # from the simulated (diameter, U-value) drop Pi_pmax (only meaningful for onshore)
+                if is_on and diam_selected is not None and u_selected is not None:
+                    pi_high = pi_init - value(m.Pi_pmax[p, diam_selected, u_selected])
+                    # Temperature at that same critical (minimum-pressure) point, and at the
+                    # coldest point along the pipe, from the simulated Theta_pmax/Theta_cold drops
+                    theta_pmax_pt = theta_init - value(m.Theta_pmax[p, diam_selected, u_selected])
+                    theta_lowest = theta_init - value(m.Theta_cold[p, diam_selected, u_selected])
 
-                # Compute an approximate "lowest pressure" using far-drop and (optional) high point
+                # Compute an approximate "lowest pressure" using the far-drop and (optional) high point
                 if diam_selected is not None:
-                    if is_on:
-                        dp_fric_far = value(m.dP_frict_far[p, diam_selected])
-                        dp_elev_far = value(m.dP_elev_far[p])
-                        pi_far_no_boost = pi_init - (dp_fric_far + dp_elev_far)
-                    else:
+                    if is_on and u_selected is not None:
+                        pi_far_no_boost = pi_init - value(m.Pi_dest[p, diam_selected, u_selected])
+                    elif not is_on:
                         dp_fric_far = value(m.dP_frict_far[p, diam_selected])
                         # Offshore far-elevation is already embedded (as in the model), so keep 0 here
                         pi_far_no_boost = pi_init - dp_fric_far
+                    else:
+                        pi_far_no_boost = None
 
                     # If you want an "unboosted" far pressure, add a column below; here we keep lowest approx.
-                    candidates = [pi_far_no_boost]
-                    if pi_high is not None:
-                        candidates.append(pi_high)
+                    candidates = [c for c in [pi_far_no_boost, pi_high] if c is not None]
                     pi_lowest = min(candidates) if candidates else None
 
         # Present-value CAPEX: P1 counted once (no omega); P2 for scenario w
@@ -239,14 +239,17 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
             if p in P2_off:
                 capex += sum(value(m.c_pipe_off_P2[p, t, w]) for t in m.T)
 
-        # Insulation status and its share of the CAPEX above (onshore only)
-        pen_ins_val = value(m.pen_ins[p])
-        insulated = bool(is_on and pen_ins_val > 1.0 + 1e-9)
-        insulation_cost = (
-            capex * (pen_ins_val - 1.0) / pen_ins_val
-            if (installed and insulated)
-            else 0.0
-        )
+        # Insulation status (u = 0.43 W/m^2/K) and its share of the CAPEX above (onshore only)
+        NOT_INSULATED_U = 2.0
+        insulated = bool(is_on and u_selected is not None and abs(u_selected - NOT_INSULATED_U) > 1e-9)
+        insulation_cost = 0.0
+        if installed and insulated and diam_selected is not None:
+            t_ins = _t_from_year(m, year)
+            if t_ins is not None:
+                cost_with_ins = value(m.cins_on[diam_selected, u_selected, t_ins])
+                cost_no_ins = value(m.cins_on[diam_selected, NOT_INSULATED_U, t_ins])
+                if cost_with_ins > 0:
+                    insulation_cost = capex * (1.0 - cost_no_ins / cost_with_ins)
 
         # Connections and node types
         i_node = value(m.start[p])
@@ -276,10 +279,15 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
             "Pressure at highest point [bar]": pi_high if installed else None,
             "Final pressure [bar]": pi_final if installed else None,
             "Lowest pressure [bar]": pi_lowest if installed else None,
+            "Initial temperature [°C]": theta_init if installed else None,
+            "Temperature at critical pressure point [°C]": theta_pmax_pt if installed else None,
+            "Final temperature [°C]": theta_final if installed else None,
+            "Lowest temperature [°C]": theta_lowest if installed else None,
             "Number of boosters": n_boost if installed else None,
             "Installation Year": year if installed else None,
             "Present Value Cost [M€]": capex if installed else None,
             "Insulated": insulated if is_on else None,
+            "U-value [W/m^2/K]": u_selected if (is_on and installed) else None,
             "Insulation cost [M€]": insulation_cost if installed else None,
             "Booster delta pressure [bar]": actual_dp_boost if installed else None,
         }
@@ -460,6 +468,8 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
             return 0.0
         return sum(value(m.injection_cost[t]) * value(m.qstore[s, t, w]) for s in m.S)
 
+    NOT_INSULATED_U = 2.0
+
     def opex_pipe_on_year(yr):
         t = _t(yr)
         if t is None:
@@ -470,23 +480,23 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
             if act <= 1e-12:
                 continue
             for d in m.D:
-                bd = value(_b_diam_on(m, p, d, w))
-                if bd <= 1e-12:
-                    continue
-                total += (
-                    years_per_step
-                    * value(m.cop_on[d, t])
-                    * value(m.L_on[p])
-                    * value(m.pen_city[p])
-                    * value(m.pen_slope[p])
-                    * value(m.pen_ins[p])
-                    * bd
-                    * act
-                )
+                for u in m.U:
+                    bd = value(_b_diam_on(m, p, d, u, w))
+                    if bd <= 1e-12:
+                        continue
+                    total += (
+                        years_per_step
+                        * value(m.cop_on[d, u, t])
+                        * value(m.L_on[p])
+                        * value(m.pen_city[p])
+                        * value(m.pen_slope[p])
+                        * bd
+                        * act
+                    )
         return total
 
     def opex_pipe_on_insulation_year(yr):
-        """Portion of opex_pipe_on_year attributable to the insulation surcharge (pen_ins - 1)."""
+        """Portion of opex_pipe_on_year attributable to the insulation surcharge (u = 0.43 vs. 2.0)."""
         t = _t(yr)
         if t is None:
             return 0.0
@@ -495,23 +505,25 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
             act = value(m.act_on[p, t, w])
             if act <= 1e-12:
                 continue
-            pen_ins_extra = value(m.pen_ins[p]) - 1.0
-            if pen_ins_extra <= 1e-12:
-                continue
             for d in m.D:
-                bd = value(_b_diam_on(m, p, d, w))
-                if bd <= 1e-12:
-                    continue
-                total += (
-                    years_per_step
-                    * value(m.cop_on[d, t])
-                    * value(m.L_on[p])
-                    * value(m.pen_city[p])
-                    * value(m.pen_slope[p])
-                    * pen_ins_extra
-                    * bd
-                    * act
-                )
+                for u in m.U:
+                    if abs(u - NOT_INSULATED_U) <= 1e-9:
+                        continue
+                    bd = value(_b_diam_on(m, p, d, u, w))
+                    if bd <= 1e-12:
+                        continue
+                    extra = value(m.cop_on[d, u, t]) - value(m.cop_on[d, NOT_INSULATED_U, t])
+                    if extra <= 1e-12:
+                        continue
+                    total += (
+                        years_per_step
+                        * extra
+                        * value(m.L_on[p])
+                        * value(m.pen_city[p])
+                        * value(m.pen_slope[p])
+                        * bd
+                        * act
+                    )
         return total
 
     def opex_pipe_off_year(yr):

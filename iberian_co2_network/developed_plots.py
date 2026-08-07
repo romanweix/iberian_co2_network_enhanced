@@ -145,6 +145,7 @@ def add_nodes(ax, DATA):
         )
 
     handles.append(booster_legend_handle())
+    handles.append(mlines.Line2D([], [], color="gold", linewidth=6, label="Insulated onshore pipeline"))
     ax.legend(handles=handles, loc="lower right", frameon=True, fontsize=8)
 
 def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
@@ -195,12 +196,19 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
         pi_init  = pyo.value(m.pi_orig[p, t_match, w])
         pi_final = pyo.value(m.pi_dest[p, t_match, w])
 
-        # Selected diameter (P1 without w; P2 with w)
+        # Selected diameter (P1 without w; P2 with w); onshore also selects a U-value
+        u_selected = None
         if is_on:
             if p in m.P1_on:
-                diam_selected = next((d for d in m.D if pyo.value(m.b_diam_on_P1[p, d]) > 0.5), None)
+                diam_selected, u_selected = next(
+                    ((d, u) for d in m.D for u in m.U if pyo.value(m.b_diam_on_P1[p, d, u]) > 0.5),
+                    (None, None)
+                )
             else:
-                diam_selected = next((d for d in m.D if pyo.value(m.b_diam_on_P2[p, d, w]) > 0.5), None)
+                diam_selected, u_selected = next(
+                    ((d, u) for d in m.D for u in m.U if pyo.value(m.b_diam_on_P2[p, d, u, w]) > 0.5),
+                    (None, None)
+                )
         else:
             if p in m.P1_off:
                 diam_selected = next((d for d in m.D if pyo.value(m.b_diam_off_P1[p, d]) > 0.5), None)
@@ -209,13 +217,13 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
         if diam_selected is None:
             continue
 
-        # Pressure drops (use DATA tables in both cases)
-        dp_fric_high = DATA["dP_frict_high"][(p, diam_selected)]
-        dp_fric_far  = DATA["dP_frict_far"] [(p, diam_selected)]
-        dp_elev_high = DATA["dP_elev_high"][p]
-        dp_elev_far  = DATA["dP_elev_far"] [p]
-
-        p_high  = pi_init - (dp_fric_high + dp_elev_high)
+        # Pressure drops: onshore uses the simulated (diameter, U-value) drops,
+        # offshore keeps the analytic friction table (no elevation term, as in the model)
+        if is_on:
+            p_high = pi_init - DATA["Pi_pmax"][(p, diam_selected, u_selected)]
+        else:
+            dp_fric_far = DATA["dP_frict_far"][(p, diam_selected)]
+            p_high = pi_init - dp_fric_far
 
         geom = DATA["pipe_geom"][p]
         L    = DATA["L"][p]
@@ -224,6 +232,11 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
         segs, cols, booster_xy, booster_dir = _pipe_segments_with_gradient(
             geom, pi_init, p_high, pi_final, L, Lh
         )
+
+        # Highlight insulated onshore pipelines with a yellow outline behind the pressure-gradient line
+        if is_on and u_selected is not None and abs(u_selected - 0.43) < 1e-9:
+            ax.add_collection(LineCollection(segs, colors="gold", linewidths=7, zorder=3.9))
+
         ax.add_collection(LineCollection(segs, colors=cols, linewidths=3, zorder=4))
 
         # ------------------------------------------------------------------

@@ -10,10 +10,11 @@ from pyomo.environ import value
 from pyomo.opt import TerminationCondition as tc
 
 # Local modules (relative imports inside package ‘model’)
-from iberian_co2_network.data  import DATA
+from iberian_co2_network.data import DATA
 from iberian_co2_network.developed_plots import plot_network, save_all_plots
 from iberian_co2_network import developed_solution, utils
 from iberian_co2_network.developed_model import build_model
+#from iberian_co2_network.developed_model_claude_booster_v1 import build_model
 
 print("🔍  Current working directory:", os.getcwd())
 print("🔍  Script location:", pathlib.Path(__file__).resolve())
@@ -49,6 +50,15 @@ BASE_OPTS = {
     "Symmetry": 2,
 }
 
+""" BASE_OPTS = {
+    "Seed": 1,
+    "SoftMemLimit": 6144,     # 6 GB -> 6144 MB
+    "NodeFileStart": 0.5,     # start paging nodes to disk after 0.5 GB
+    "Cuts": 1,
+    "Presolve": 2,
+    "Symmetry": 2,
+} """
+
 # ---- Phase 1 (fast incumbent)
 PHASE1_OPTS = {
     **BASE_OPTS,
@@ -58,6 +68,15 @@ PHASE1_OPTS = {
     "Heuristics": 0.3,
 }
 
+# ---- Phase 1 (fast incumbent)
+""" PHASE1_OPTS = {
+    **BASE_OPTS,
+    "TimeLimit": 300,         # adjust if you want
+    "MIPGap": 0.15,           # <-- phase 1 gap
+    "MIPFocus": 1,
+    "Heuristics": 0.5,
+} """
+
 # ---- Phase 2 (refine)
 PHASE2_OPTS = {
     **BASE_OPTS,
@@ -66,6 +85,15 @@ PHASE2_OPTS = {
     "MIPFocus": 1,
     "Heuristics": 0.3,
 }
+
+# ---- Phase 2 (refine)
+""" PHASE2_OPTS = {
+    **BASE_OPTS,
+    "TimeLimit": 300,         # original time limit
+    "MIPGap": 0.15,           # <-- phase 2 gap
+    "MIPFocus": 1,
+    "Heuristics": 0.8,
+} """
 
 # --------------------------------------------------------------
 # 3a) Phase 1 solve
@@ -174,10 +202,10 @@ z_off_P2 = {(p, t, w): value(m.z_off_P2[p, t, w]) for p in m.P2_off for t in T f
 # 7) Selected diameters
 #    - P1 WITHOUT w
 #    - P2 WITH w
-b_diam_on_P1 = {(p, d): value(m.b_diam_on_P1[p, d]) for p in m.P1_on for d in m.D}
+b_diam_on_P1 = {(p, d, u): value(m.b_diam_on_P1[p, d, u]) for p in m.P1_on for d in m.D for u in m.U}
 b_diam_off_P1 = {(p, d): value(m.b_diam_off_P1[p, d]) for p in m.P1_off for d in m.D}
 
-b_diam_on_P2 = {(p, d, w): value(m.b_diam_on_P2[p, d, w]) for p in m.P2_on for d in m.D for w in W}
+b_diam_on_P2 = {(p, d, u, w): value(m.b_diam_on_P2[p, d, u, w]) for p in m.P2_on for d in m.D for u in m.U for w in W}
 b_diam_off_P2 = {(p, d, w): value(m.b_diam_off_P2[p, d, w]) for p in m.P2_off for d in m.D for w in W}
 
 # 8) Boosters

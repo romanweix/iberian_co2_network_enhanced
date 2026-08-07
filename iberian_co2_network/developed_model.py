@@ -16,7 +16,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m = pyo.ConcreteModel(name="Iberian CCS network")
 
     # Definition of the capture and utilization target and tolerance
-    THETA = 0.1
+    THETA = 1.0
     TOL_P = 0.02  # ±2%
     m.THETA = pyo.Param(initialize=THETA)
 
@@ -45,6 +45,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.P = pyo.Set(initialize=list(data["P_on"]) + list(data["P_off"]))
 
     m.D = pyo.Set(initialize=data["D"])
+    m.U = pyo.Set(initialize=data["U"])  # onshore insulation U-values: 0.43 = insulated, 2.0 = not insulated
     m.T = pyo.Set(initialize=data["T"], ordered=True)
 
     # Helpers: use data dicts directly
@@ -72,6 +73,10 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.pi_orig = pyo.Var(m.P, m.T, m.W, domain=pyo.NonNegativeReals)
     m.pi_dest = pyo.Var(m.P, m.T, m.W, domain=pyo.NonNegativeReals)
 
+    m.theta_node = pyo.Var(m.N, m.T, m.W, domain=pyo.Reals)
+    m.theta_orig = pyo.Var(m.P, m.T, m.W, domain=pyo.Reals)
+    m.theta_dest = pyo.Var(m.P, m.T, m.W, domain=pyo.Reals)
+
     # Dominance and shipping (scenario-dependent)
     m.y_on = pyo.Var(m.P_on, m.T, m.W, domain=pyo.Binary)
     m.y_off = pyo.Var(m.P_off, m.T, m.W, domain=pyo.Binary)
@@ -83,12 +88,13 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.w_boost_on2 = pyo.Var(m.P_on, m.T, m.W, domain=pyo.NonNegativeReals)
     m.w_boost_off = pyo.Var(m.P_off, m.T, m.W, domain=pyo.NonNegativeReals)
 
-    # Auxiliary variables (= 1 if, in scenario w and time step t, pipeline p is active with diameter d)
-    m.u_on = pyo.Var(m.P_on, m.D, m.T, m.W, domain=pyo.UnitInterval)   # continuous in [0, 1]
+    # Auxiliary variables (= 1 if, in scenario w and time step t, pipeline p is active with diameter d [,U-value u])
+    m.u_on = pyo.Var(m.P_on, m.D, m.U, m.T, m.W, domain=pyo.UnitInterval)   # continuous in [0, 1]
     m.u_off = pyo.Var(m.P_off, m.D, m.T, m.W, domain=pyo.UnitInterval)
 
     # First-stage binaries (P1): scenario-independent
-    m.b_diam_on_P1 = pyo.Var(m.P1_on, m.D, domain=pyo.Binary)
+    # Onshore: diameter AND insulation U-value are chosen jointly
+    m.b_diam_on_P1 = pyo.Var(m.P1_on, m.D, m.U, domain=pyo.Binary)
     m.b_diam_off_P1 = pyo.Var(m.P1_off, m.D, domain=pyo.Binary)
 
     m.z_on_P1 = pyo.Var(m.P1_on, m.T, domain=pyo.Binary)   # one-shot build in a time step
@@ -99,7 +105,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.brep_off_P1 = pyo.Var(m.P1_off, m.T, domain=pyo.Binary)
 
     # Second-stage binaries (P2): scenario-dependent
-    m.b_diam_on_P2 = pyo.Var(m.P2_on, m.D, m.W, domain=pyo.Binary)
+    m.b_diam_on_P2 = pyo.Var(m.P2_on, m.D, m.U, m.W, domain=pyo.Binary)
     m.b_diam_off_P2 = pyo.Var(m.P2_off, m.D, m.W, domain=pyo.Binary)
 
     m.z_on_P2 = pyo.Var(m.P2_on, m.T, m.W, domain=pyo.Binary)
@@ -144,19 +150,34 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.dP_elev_high = pyo.Param(m.P, initialize=data["dP_elev_high"], within=pyo.NonNegativeReals)
     m.dP_elev_far = pyo.Param(m.P, initialize=data["dP_elev_far"], within=pyo.Reals)
 
-    # Friction pressure drops
+    # Friction pressure drops (offshore only; onshore uses the simulated Pi_* parameters below)
     m.dP_frict_high = pyo.Param(m.P * m.D, initialize=data["dP_frict_high"], within=pyo.NonNegativeReals)
     m.dP_frict_far = pyo.Param(m.P * m.D, initialize=data["dP_frict_far"], within=pyo.NonNegativeReals)
+
+    # Simulated onshore pressure-drop parameters (per pipe, diameter, U-value), all as
+    # a drop from the pipe origin: Pi_dest = drop to the pipe end, Pi_pmax = drop to the
+    # critical minimum-pressure point, Pi_theta = drop to the coldest point.
+    m.Pi_dest = pyo.Param(m.P_on, m.D, m.U, initialize=data["Pi_dest"], within=pyo.Reals)
+    m.Pi_pmax = pyo.Param(m.P_on, m.D, m.U, initialize=data["Pi_pmax"], within=pyo.Reals)
+    m.Pi_theta = pyo.Param(m.P_on, m.D, m.U, initialize=data["Pi_theta"], within=pyo.Reals)
+
+    # Simulated onshore temperature-drop parameters (per pipe, diameter, U-value), all as
+    # a drop from the pipe origin temperature: Theta_dest = drop to the pipe end,
+    # Theta_pmax = drop to the critical minimum-pressure point, Theta_cold = drop to the
+    # coldest point.
+    m.Theta_dest = pyo.Param(m.P_on, m.D, m.U, initialize=data["Theta_dest"], within=pyo.Reals)
+    m.Theta_pmax = pyo.Param(m.P_on, m.D, m.U, initialize=data["Theta_pmax"], within=pyo.Reals)
+    m.Theta_cold = pyo.Param(m.P_on, m.D, m.U, initialize=data["Theta_cold"], within=pyo.Reals)
 
     # Pipe capacity by diameter (t/year)
     m.qmax = pyo.Param(m.D, initialize=data["qmax"], within=pyo.NonNegativeReals)
 
-    # Pipeline CAPEX (M€/km)
-    m.cins_on = pyo.Param(m.D, m.T, initialize=data["cins_on"], within=pyo.NonNegativeReals)
+    # Pipeline CAPEX (M€/km); onshore also depends on the chosen insulation U-value
+    m.cins_on = pyo.Param(m.D, m.U, m.T, initialize=data["cins_on"], within=pyo.NonNegativeReals)
     m.cins_off = pyo.Param(m.D, m.T, initialize=data["cins_off"], within=pyo.NonNegativeReals)
 
-    # Pipeline OPEX (M€/km·yr)
-    m.cop_on = pyo.Param(m.D, m.T, initialize=data["cop_on"], within=pyo.NonNegativeReals)
+    # Pipeline OPEX (M€/km·yr); onshore also depends on the chosen insulation U-value
+    m.cop_on = pyo.Param(m.D, m.U, m.T, initialize=data["cop_on"], within=pyo.NonNegativeReals)
     m.cop_off = pyo.Param(m.D, m.T, initialize=data["cop_off"], within=pyo.NonNegativeReals)
 
     # Carbon allowance price (M€/MtCO2)
@@ -199,6 +220,12 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.M_eur = pyo.Param(initialize=data["M_eur"], within=pyo.NonNegativeReals)
     m.M_deg = pyo.Param(initialize=max_deg, within=pyo.NonNegativeReals)
 
+    # Temperature constants (mirror the pressure constants above)
+    m.theta_emit = pyo.Param(initialize=data["theta_emit"], within=pyo.Reals)
+    m.theta_min = pyo.Param(initialize=data["theta_min"], within=pyo.Reals)
+    m.delta_theta_boost = pyo.Param(initialize=data["delta_theta_boost"], within=pyo.NonNegativeReals)
+    m.M_theta = pyo.Param(initialize=data["M_theta"], within=pyo.NonNegativeReals)
+
     m.ship_capacity = pyo.Param(initialize=data["ship_capacity"], within=pyo.NonNegativeReals)
 
     # Scenario probabilities
@@ -222,9 +249,6 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # Simple penalties
     m.pen_city = pyo.Param(m.P, initialize=data["pen_city"], within=pyo.NonNegativeReals)
     m.pen_slope = pyo.Param(m.P, initialize=data["pen_slope"], within=pyo.NonNegativeReals)
-    # Insulation cost penalty factor (onshore only): 1.0 for non-insulated pipes,
-    # (1 + ONSHORE_INSULATION_SURCHARGE_PCT / 100) for pipes flagged as insulated in data.py
-    m.pen_ins = pyo.Param(m.P, initialize=data["pen_ins"], within=pyo.NonNegativeReals)
 
     m.tmethod_p = pyo.Param(m.P, initialize=data["tmethod_p"], within=pyo.Any)
     m.stage_p = pyo.Param(m.P, initialize=data["stage_p"], within=pyo.Any)
@@ -359,8 +383,8 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # ------------------------------------------------------------------
     # 6) Helpers for P1/P2 effective variables
     # ------------------------------------------------------------------
-    def b_diam_on_eff(m, p, d, w):
-        return m.b_diam_on_P1[p, d] if p in m.P1_on else m.b_diam_on_P2[p, d, w]
+    def b_diam_on_eff(m, p, d, u, w):
+        return m.b_diam_on_P1[p, d, u] if p in m.P1_on else m.b_diam_on_P2[p, d, u, w]
 
     def b_diam_off_eff(m, p, d, w):
         return m.b_diam_off_P1[p, d] if p in m.P1_off else m.b_diam_off_P2[p, d, w]
@@ -399,7 +423,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     # Flow capacity by chosen diameter
     def onshore_flow_capacity_rule(m, p, t, w):
-        return m.q_on[p, t, w] <= sum(m.qmax[d] * b_diam_on_eff(m, p, d, w) for d in m.D)
+        return m.q_on[p, t, w] <= sum(m.qmax[d] * b_diam_on_eff(m, p, d, u, w) for d in m.D for u in m.U)
 
     m.OnshoreFlowCapacity = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_flow_capacity_rule)
 
@@ -408,14 +432,14 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     m.OffshoreFlowCapacity = pyo.Constraint(m.P_off, m.T, m.W, rule=offshore_flow_capacity_rule)
 
-    # Single-diameter per pipeline
+    # Single (diameter, U-value) combination per pipeline
     def onshore_single_diam_P1(m, p):
-        return sum(m.b_diam_on_P1[p, d] for d in m.D) <= 1
+        return sum(m.b_diam_on_P1[p, d, u] for d in m.D for u in m.U) <= 1
 
     m.OnshoreSingleDiameter_P1 = pyo.Constraint(m.P1_on, rule=onshore_single_diam_P1)
 
     def onshore_single_diam_P2(m, p, w):
-        return sum(m.b_diam_on_P2[p, d, w] for d in m.D) <= 1
+        return sum(m.b_diam_on_P2[p, d, u, w] for d in m.D for u in m.U) <= 1
 
     m.OnshoreSingleDiameter_P2 = pyo.Constraint(m.P2_on, m.W, rule=onshore_single_diam_P2)
 
@@ -442,7 +466,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     # Diameter only if the segment is built (P1 and P2)
     def diam_only_if_built_on_P1(m, p):
-        return sum(m.b_diam_on_P1[p, d] for d in m.D) <= sum(m.z_on_P1[p, t] for t in m.T)
+        return sum(m.b_diam_on_P1[p, d, u] for d in m.D for u in m.U) <= sum(m.z_on_P1[p, t] for t in m.T)
 
     m.DiamRequiresBuildOn_P1 = pyo.Constraint(m.P1_on, rule=diam_only_if_built_on_P1)
 
@@ -452,7 +476,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.DiamRequiresBuildOff_P1 = pyo.Constraint(m.P1_off, rule=diam_only_if_built_off_P1)
 
     def diam_only_if_built_on_P2(m, p, w):
-        return sum(m.b_diam_on_P2[p, d, w] for d in m.D) <= sum(m.z_on_P2[p, t, w] for t in m.T)
+        return sum(m.b_diam_on_P2[p, d, u, w] for d in m.D for u in m.U) <= sum(m.z_on_P2[p, t, w] for t in m.T)
 
     m.DiamRequiresBuildOn_P2 = pyo.Constraint(m.P2_on, m.W, rule=diam_only_if_built_on_P2)
 
@@ -463,7 +487,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     # Construction requires a diameter choice (P1 and P2)
     def onshore_constr_needs_diam_P1(m, p, t):
-        return m.z_on_P1[p, t] <= sum(m.b_diam_on_P1[p, d] for d in m.D)
+        return m.z_on_P1[p, t] <= sum(m.b_diam_on_P1[p, d, u] for d in m.D for u in m.U)
 
     m.OnshoreConstrNeedsDiam_P1 = pyo.Constraint(m.P1_on, m.T, rule=onshore_constr_needs_diam_P1)
 
@@ -473,7 +497,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.OffshoreConstrNeedsDiam_P1 = pyo.Constraint(m.P1_off, m.T, rule=offshore_constr_needs_diam_P1)
 
     def onshore_constr_needs_diam_P2(m, p, t, w):
-        return m.z_on_P2[p, t, w] <= sum(m.b_diam_on_P2[p, d, w] for d in m.D)
+        return m.z_on_P2[p, t, w] <= sum(m.b_diam_on_P2[p, d, u, w] for d in m.D for u in m.U)
 
     m.OnshoreConstrNeedsDiam_P2 = pyo.Constraint(m.P2_on, m.T, m.W, rule=onshore_constr_needs_diam_P2)
 
@@ -497,21 +521,21 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     Dpi = m.delta_p_boost
     pmin = m.p_min
 
-    # Onshore pressure drop (far point)
+    # Onshore pressure drop to the pipe end, using the simulated (diameter, U-value) drop Pi_dest
     def onshore_pressure_low_rule(m, p, t, w):
-        frict = sum(b_diam_on_eff(m, p, d, w) * m.dP_frict_far[p, d] for d in m.D)
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Pi_dest[p, d, u] for d in m.D for u in m.U)
         nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
         return (
             m.pi_dest[p, t, w]
-            >= m.pi_orig[p, t, w] - m.dP_elev_far[p] - frict + Dpi * nboost - Mpi * (1 - m.act_on[p, t, w])
+            >= m.pi_orig[p, t, w] - drop + Dpi * nboost - Mpi * (1 - m.act_on[p, t, w])
         )
 
     def onshore_pressure_up_rule(m, p, t, w):
-        frict = sum(b_diam_on_eff(m, p, d, w) * m.dP_frict_far[p, d] for d in m.D)
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Pi_dest[p, d, u] for d in m.D for u in m.U)
         nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
         return (
             m.pi_dest[p, t, w]
-            <= m.pi_orig[p, t, w] - m.dP_elev_far[p] - frict + Dpi * nboost + Mpi * (1 - m.act_on[p, t, w])
+            <= m.pi_orig[p, t, w] - drop + Dpi * nboost + Mpi * (1 - m.act_on[p, t, w])
         )
 
     m.PressDropOnshore_LB = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_pressure_low_rule)
@@ -535,16 +559,29 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.PressDropOffshore_LB = pyo.Constraint(m.P_off, m.T, m.W, rule=offshore_pressure_low_rule)
     m.PressDropOffshore_UB = pyo.Constraint(m.P_off, m.T, m.W, rule=offshore_pressure_up_rule)
 
-    # Minimum pressure at the highest point (onshore)
+    # Minimum origin pressure to keep the critical minimum-pressure point above pmin,
+    # using the simulated (diameter, U-value) drop Pi_pmax
     def onshore_high_point_rule(m, p, t, w):
-        frict = sum(b_diam_on_eff(m, p, d, w) * m.dP_frict_high[p, d] for d in m.D)
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Pi_pmax[p, d, u] for d in m.D for u in m.U)
         nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
         return (
             m.pi_orig[p, t, w]
-            >= pmin + m.dP_elev_high[p] + frict - Dpi * nboost - Mpi * (1 - m.act_on[p, t, w])
+            >= pmin + drop - Dpi * nboost - Mpi * (1 - m.act_on[p, t, w])
         )
 
     m.HighPointMinPressure = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_high_point_rule)
+
+    # Minimum origin pressure to keep the coldest point above pmin, using the simulated
+    # (diameter, U-value) drop Pi_theta
+    def onshore_cold_point_rule(m, p, t, w):
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Pi_theta[p, d, u] for d in m.D for u in m.U)
+        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        return (
+            m.pi_orig[p, t, w]
+            >= pmin + drop - Dpi * nboost - Mpi * (1 - m.act_on[p, t, w])
+        )
+
+    m.ColdPointMinPressure = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_cold_point_rule)
 
     # Minimum pressure at pipe outlet
     m.DestMinPressureOn = pyo.Constraint(m.P_on, m.T, m.W, rule=lambda m, p, t, w: m.pi_dest[p, t, w] >= pmin)
@@ -558,6 +595,76 @@ def build_model(data: dict) -> pyo.ConcreteModel:
         return m.pi_orig[p, t, w] == m.pi_node[m.start[p], t, w]
 
     m.OriginPressureLink = pyo.Constraint(m.P, m.T, m.W, rule=origin_pressure_link_rule)
+
+    # ------------------------------------------------------------------
+    # 9b) Temperature constraints (scenario-indexed), mirroring the pressure
+    #     constraints above. Booster temperature gain uses the plain binary
+    #     booster count (brep_on1/brep_on2), not a staged operating fraction.
+    # ------------------------------------------------------------------
+
+    # Fixed temperature at every emitter node
+    def fixed_emitter_temperature_rule(m, e, t, w):
+        return m.theta_node[e, t, w] == m.theta_emit
+
+    m.FixedEmitterTemperature = pyo.Constraint(m.E, m.T, m.W, rule=fixed_emitter_temperature_rule)
+
+    # Shorthands
+    Mth = m.M_theta
+    Dth = m.delta_theta_boost
+    thmin = m.theta_min
+
+    # Onshore temperature drop to the pipe end, using the simulated (diameter, U-value) drop Theta_dest
+    def onshore_temp_low_rule(m, p, t, w):
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Theta_dest[p, d, u] for d in m.D for u in m.U)
+        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        return (
+            m.theta_dest[p, t, w]
+            >= m.theta_orig[p, t, w] - drop + Dth * nboost - Mth * (1 - m.act_on[p, t, w])
+        )
+
+    def onshore_temp_up_rule(m, p, t, w):
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Theta_dest[p, d, u] for d in m.D for u in m.U)
+        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        return (
+            m.theta_dest[p, t, w]
+            <= m.theta_orig[p, t, w] - drop + Dth * nboost + Mth * (1 - m.act_on[p, t, w])
+        )
+
+    m.TempDropOnshore_LB = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_temp_low_rule)
+    m.TempDropOnshore_UB = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_temp_up_rule)
+
+    # Minimum origin temperature to keep the critical minimum-pressure point above theta_min,
+    # using the simulated (diameter, U-value) drop Theta_pmax
+    def onshore_temp_pmax_rule(m, p, t, w):
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Theta_pmax[p, d, u] for d in m.D for u in m.U)
+        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        return (
+            m.theta_orig[p, t, w]
+            >= thmin + drop - Dth * nboost - Mth * (1 - m.act_on[p, t, w])
+        )
+
+    m.PmaxPointMinTemp = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_temp_pmax_rule)
+
+    # Minimum origin temperature to keep the coldest point above theta_min, using the
+    # simulated (diameter, U-value) drop Theta_cold
+    def onshore_temp_cold_rule(m, p, t, w):
+        drop = sum(b_diam_on_eff(m, p, d, u, w) * m.Theta_cold[p, d, u] for d in m.D for u in m.U)
+        nboost = brep_on1_eff(m, p, t, w) + brep_on2_eff(m, p, t, w)
+        return (
+            m.theta_orig[p, t, w]
+            >= thmin + drop - Dth * nboost - Mth * (1 - m.act_on[p, t, w])
+        )
+
+    m.ColdPointMinTemp = pyo.Constraint(m.P_on, m.T, m.W, rule=onshore_temp_cold_rule)
+
+    # Minimum node temperature
+    m.MinNodeTemperature = pyo.Constraint(m.N, m.T, m.W, rule=lambda m, i, t, w: m.theta_node[i, t, w] >= thmin)
+
+    # Link origin node temperature to pipeline origin
+    def origin_temperature_link_rule(m, p, t, w):
+        return m.theta_orig[p, t, w] == m.theta_node[m.start[p], t, w]
+
+    m.OriginTemperatureLink = pyo.Constraint(m.P, m.T, m.W, rule=origin_temperature_link_rule)
 
     # ------------------------------------------------------------------
     # 10) Dominant-pipe selection and node pressure (scenario-indexed)
@@ -674,6 +781,49 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     m.NodePressTol_LB = pyo.Constraint(m.N, m.P, m.T, m.W, rule=node_pressure_consistency_lb)
     m.NodePressTol_UB = pyo.Constraint(m.N, m.P, m.T, m.W, rule=node_pressure_consistency_ub)
+
+    # Node temperature equals the destination temperature of the dominant incoming pipe (big-M)
+    m.NodeTempEq = pyo.ConstraintList()
+    for i in m.N:
+        for t in m.T:
+            for w in m.W:
+                for p in IN[i]:
+                    if p in m.P_on:
+                        m.NodeTempEq.add(m.theta_node[i, t, w] >= m.theta_dest[p, t, w] - Mth * (1 - m.y_on[p, t, w]))
+                        m.NodeTempEq.add(m.theta_node[i, t, w] <= m.theta_dest[p, t, w] + Mth * (1 - m.y_on[p, t, w]))
+                    elif p in m.P_off:
+                        m.NodeTempEq.add(m.theta_node[i, t, w] >= m.theta_dest[p, t, w] - Mth * (1 - m.y_off[p, t, w]))
+                        m.NodeTempEq.add(m.theta_node[i, t, w] <= m.theta_dest[p, t, w] + Mth * (1 - m.y_off[p, t, w]))
+                    else:
+                        continue
+
+    # Keep non-dominant pipes close to node temperature (tolerance band)
+    Delta_theta_tol = 5  # °C
+
+    def node_temp_consistency_lb(m, i, p, t, w):
+        if p not in IN[i]:
+            return pyo.Constraint.Skip
+        if p in m.P_on:
+            active = m.act_on[p, t, w]
+        elif p in m.P_off:
+            active = m.act_off[p, t, w] + m.b_ship[p, t, w]
+        else:
+            return pyo.Constraint.Skip
+        return m.theta_node[i, t, w] >= m.theta_dest[p, t, w] - Delta_theta_tol - Mth * (1 - active)
+
+    def node_temp_consistency_ub(m, i, p, t, w):
+        if p not in IN[i]:
+            return pyo.Constraint.Skip
+        if p in m.P_on:
+            active = m.act_on[p, t, w]
+        elif p in m.P_off:
+            active = m.act_off[p, t, w] + m.b_ship[p, t, w]
+        else:
+            return pyo.Constraint.Skip
+        return m.theta_node[i, t, w] <= m.theta_dest[p, t, w] + Delta_theta_tol + Mth * (1 - active)
+
+    m.NodeTempTol_LB = pyo.Constraint(m.N, m.P, m.T, m.W, rule=node_temp_consistency_lb)
+    m.NodeTempTol_UB = pyo.Constraint(m.N, m.P, m.T, m.W, rule=node_temp_consistency_ub)
 
     # ------------------------------------------------------------------
     # 11) Booster installation rules (activation and sequence)
@@ -922,18 +1072,19 @@ def build_model(data: dict) -> pyo.ConcreteModel:
             continue
         for p in m.P2_on:
             for d in m.D:
-                m.NA_bdiam_on_P2_cond.add(
-                    m.b_diam_on_P2[p, d, w] - m.b_diam_on_P2[p, d, w0] <= 1 - m.z_on_P2[p, t0, w]
-                )
-                m.NA_bdiam_on_P2_cond.add(
-                    m.b_diam_on_P2[p, d, w0] - m.b_diam_on_P2[p, d, w] <= 1 - m.z_on_P2[p, t0, w]
-                )
-                m.NA_bdiam_on_P2_cond.add(
-                    m.b_diam_on_P2[p, d, w] - m.b_diam_on_P2[p, d, w0] <= 1 - m.z_on_P2[p, t0, w0]
-                )
-                m.NA_bdiam_on_P2_cond.add(
-                    m.b_diam_on_P2[p, d, w0] - m.b_diam_on_P2[p, d, w] <= 1 - m.z_on_P2[p, t0, w0]
-                )
+                for u in m.U:
+                    m.NA_bdiam_on_P2_cond.add(
+                        m.b_diam_on_P2[p, d, u, w] - m.b_diam_on_P2[p, d, u, w0] <= 1 - m.z_on_P2[p, t0, w]
+                    )
+                    m.NA_bdiam_on_P2_cond.add(
+                        m.b_diam_on_P2[p, d, u, w0] - m.b_diam_on_P2[p, d, u, w] <= 1 - m.z_on_P2[p, t0, w]
+                    )
+                    m.NA_bdiam_on_P2_cond.add(
+                        m.b_diam_on_P2[p, d, u, w] - m.b_diam_on_P2[p, d, u, w0] <= 1 - m.z_on_P2[p, t0, w0]
+                    )
+                    m.NA_bdiam_on_P2_cond.add(
+                        m.b_diam_on_P2[p, d, u, w0] - m.b_diam_on_P2[p, d, u, w] <= 1 - m.z_on_P2[p, t0, w0]
+                    )
 
         for p in m.P2_off:
             for d in m.D:
@@ -973,14 +1124,20 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m.NA_pi_node = pyo.ConstraintList()
     m.NA_pi_orig = pyo.ConstraintList()
     m.NA_pi_dest = pyo.ConstraintList()
+    m.NA_theta_node = pyo.ConstraintList()
+    m.NA_theta_orig = pyo.ConstraintList()
+    m.NA_theta_dest = pyo.ConstraintList()
     for w in m.W:
         if w == w0:
             continue
         for i in m.N:
             m.NA_pi_node.add(m.pi_node[i, t0, w] == m.pi_node[i, t0, w0])
+            m.NA_theta_node.add(m.theta_node[i, t0, w] == m.theta_node[i, t0, w0])
         for p in m.P:
             m.NA_pi_orig.add(m.pi_orig[p, t0, w] == m.pi_orig[p, t0, w0])
             m.NA_pi_dest.add(m.pi_dest[p, t0, w] == m.pi_dest[p, t0, w0])
+            m.NA_theta_orig.add(m.theta_orig[p, t0, w] == m.theta_orig[p, t0, w0])
+            m.NA_theta_dest.add(m.theta_dest[p, t0, w] == m.theta_dest[p, t0, w0])
 
     m.NA_y_on = pyo.ConstraintList()
     m.NA_y_off = pyo.ConstraintList()
@@ -1058,18 +1215,18 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # ------------------------------------------------------------------
     # 20) Linearization for the objective function: u_on/off = act_on/off * b_diam_on/off
     # ------------------------------------------------------------------
-    def u_on_ub1(m, p, d, t, w):
-        return m.u_on[p, d, t, w] <= m.act_on[p, t, w]
+    def u_on_ub1(m, p, d, u, t, w):
+        return m.u_on[p, d, u, t, w] <= m.act_on[p, t, w]
 
-    def u_on_ub2(m, p, d, t, w):
-        return m.u_on[p, d, t, w] <= b_diam_on_eff(m, p, d, w)
+    def u_on_ub2(m, p, d, u, t, w):
+        return m.u_on[p, d, u, t, w] <= b_diam_on_eff(m, p, d, u, w)
 
-    def u_on_lb(m, p, d, t, w):
-        return m.u_on[p, d, t, w] >= m.act_on[p, t, w] + b_diam_on_eff(m, p, d, w) - 1
+    def u_on_lb(m, p, d, u, t, w):
+        return m.u_on[p, d, u, t, w] >= m.act_on[p, t, w] + b_diam_on_eff(m, p, d, u, w) - 1
 
-    m.UOnUB1 = pyo.Constraint(m.P_on, m.D, m.T, m.W, rule=u_on_ub1)
-    m.UOnUB2 = pyo.Constraint(m.P_on, m.D, m.T, m.W, rule=u_on_ub2)
-    m.UOnLB  = pyo.Constraint(m.P_on, m.D, m.T, m.W, rule=u_on_lb)
+    m.UOnUB1 = pyo.Constraint(m.P_on, m.D, m.U, m.T, m.W, rule=u_on_ub1)
+    m.UOnUB2 = pyo.Constraint(m.P_on, m.D, m.U, m.T, m.W, rule=u_on_ub2)
+    m.UOnLB  = pyo.Constraint(m.P_on, m.D, m.U, m.T, m.W, rule=u_on_lb)
 
     def u_off_ub1(m, p, d, t, w):
         return m.u_off[p, d, t, w] <= m.act_off[p, t, w]
@@ -1097,10 +1254,10 @@ def build_model(data: dict) -> pyo.ConcreteModel:
 
     # Big-M values for CAPEX linearization
     capex_max_on = max(
-        data["cins_on"][d, t]
+        data["cins_on"][d, u, t]
         * max(data["L"][p] for p in data["P_on"])
-        * max(data["pen_city"][p] * data["pen_slope"][p] * data["pen_ins"][p] for p in data["P_on"])
-        for d in data["D"] for t in data["T"]
+        * max(data["pen_city"][p] * data["pen_slope"][p] for p in data["P_on"])
+        for d in data["D"] for u in data["U"] for t in data["T"]
     ) + 1e-3
 
     capex_max_off = max(
@@ -1119,15 +1276,15 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # P1 onshore CAPEX (paid only in the build year)
     def cap_on_P1_ub(m, p, t):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P1[p, d]
-            for d in m.D
+            m.cins_on[d, u, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P1[p, d, u]
+            for d in m.D for u in m.U
         )
         return m.c_pipe_on_P1[p, t] <= expr
 
     def cap_on_P1_lb(m, p, t):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P1[p, d]
-            for d in m.D
+            m.cins_on[d, u, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P1[p, d, u]
+            for d in m.D for u in m.U
         )
         return m.c_pipe_on_P1[p, t] >= expr - capex_max_on * (1 - m.z_on_P1[p, t])
 
@@ -1163,15 +1320,15 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # P2 onshore CAPEX (paid only in the build year)
     def cap_on_P2_ub(m, p, t, w):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P2[p, d, w]
-            for d in m.D
+            m.cins_on[d, u, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P2[p, d, u, w]
+            for d in m.D for u in m.U
         )
         return m.c_pipe_on_P2[p, t, w] <= expr
 
     def cap_on_P2_lb(m, p, t, w):
         expr = sum(
-            m.cins_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.b_diam_on_P2[p, d, w]
-            for d in m.D
+            m.cins_on[d, u, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.b_diam_on_P2[p, d, u, w]
+            for d in m.D for u in m.U
         )
         return m.c_pipe_on_P2[p, t, w] >= expr - capex_max_on * (1 - m.z_on_P2[p, t, w])
 
@@ -1215,8 +1372,8 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     # Pipeline OPEX (expected), scaled by years per step
     opex_pipe_on = years_per_step * sum(
         m.prob[w] * sum(
-            m.cop_on[d, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.pen_ins[p] * m.u_on[p, d, t, w]
-            for p in m.P_on for d in m.D for t in m.T
+            m.cop_on[d, u, t] * m.L_on[p] * m.pen_city[p] * m.pen_slope[p] * m.u_on[p, d, u, t, w]
+            for p in m.P_on for d in m.D for u in m.U for t in m.T
         )
         for w in m.W
     )
@@ -1296,14 +1453,14 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     def pipe_cap_P1(m, p):
         # P1 diameter variables have no scenario index
         if p in m.P1_on:
-            return sum(m.qmax[d] * m.b_diam_on_P1[p, d] for d in m.D)
+            return sum(m.qmax[d] * m.b_diam_on_P1[p, d, u] for d in m.D for u in m.U)
         elif p in m.P1_off:
             return sum(m.qmax[d] * m.b_diam_off_P1[p, d] for d in m.D)
         return 0.0
 
     def pipe_cap_P2(m, p, w):
         if p in m.P2_on:
-            return sum(m.qmax[d] * m.b_diam_on_P2[p, d, w] for d in m.D)
+            return sum(m.qmax[d] * m.b_diam_on_P2[p, d, u, w] for d in m.D for u in m.U)
         elif p in m.P2_off:
             return sum(m.qmax[d] * m.b_diam_off_P2[p, d, w] for d in m.D)
         return 0.0
