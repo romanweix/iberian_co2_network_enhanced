@@ -1887,7 +1887,7 @@ with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
     df_ccus_5yr.to_excel(writer, sheet_name="CCUS targets", index=False)
 
 # attach simulation data from preprocessing
-sim_data_excel = pd.read_excel("data/sim_PV_complete_parameters_definition.xlsx", sheet_name="Pipeline sim. results")
+sim_data_excel = pd.read_excel("data/sim_pipeline_candidate.xlsx", sheet_name="Pipeline sim. results")
 with pd.ExcelWriter(output_excel, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
     sim_data_excel.to_excel(writer, sheet_name="Pipeline sim. results", index=False)
 
