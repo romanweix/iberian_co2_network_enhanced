@@ -315,7 +315,7 @@ for idx, row in df.iterrows():
                 "Pipe ID": pipe_id,
                 "Longitude [km]": longitude,
                 "U-Wert [W/m^2/K]": u_val,
-                "D [m]": d_inch,
+                "D [inch]": d_inch,
                 "p_end [bar]": dp_ende_bar,
                 "t_end [°C]": dT_ende_c,
                 "p_max p[bar]": p[idx_p_min] / 1e5,
