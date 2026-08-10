@@ -1,0 +1,243 @@
+\ Model SystemCost_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+Minimize
+ 
+Subject To
+ c_e_EmitterMassBalance(16_2045_low_utilization)_:
+   qcap(16_2045_low_utilization) + q_on(28_a_2045_low_utilization)
+   - q_on(28_b_2045_low_utilization) - q_on(25_a_2045_low_utilization)
+   + q_on(25_b_2045_low_utilization) - q_on(70_a_2045_low_utilization)
+   + q_on(70_b_2045_low_utilization) = 0
+ c_u_OnshoreFlowCapacity(25_a_2045_low_utilization)_:
+   q_on(25_a_2045_low_utilization)
+   - 2.9348865911421 b_diam_on_P1(25_a__6__2_0)
+   - 8.152462753172502 b_diam_on_P1(25_a__10__2_0)
+   - 15.9788269962181 b_diam_on_P1(25_a__14__2_0)
+   - 26.41397932027891 b_diam_on_P1(25_a__18__2_0)
+   - 39.45791972535491 b_diam_on_P1(25_a__22__2_0)
+   - 55.1106482114461 b_diam_on_P1(25_a__26__2_0)
+   - 73.37216477855253 b_diam_on_P1(25_a__30__2_0)
+   - 94.24246942667411 b_diam_on_P1(25_a__34__2_0)
+   - 117.7215621558109 b_diam_on_P1(25_a__38__2_0)
+   - 143.8094429659629 b_diam_on_P1(25_a__42__2_0) <= 0
+ c_u_OnshoreFlowCapacity(28_b_2045_low_utilization)_:
+   q_on(28_b_2045_low_utilization)
+   - 2.9348865911421 b_diam_on_P1(28_b__6__2_0)
+   - 8.152462753172502 b_diam_on_P1(28_b__10__2_0)
+   - 15.9788269962181 b_diam_on_P1(28_b__14__2_0)
+   - 26.41397932027891 b_diam_on_P1(28_b__18__2_0)
+   - 39.45791972535491 b_diam_on_P1(28_b__22__2_0)
+   - 55.1106482114461 b_diam_on_P1(28_b__26__2_0)
+   - 73.37216477855253 b_diam_on_P1(28_b__30__2_0)
+   - 94.24246942667411 b_diam_on_P1(28_b__34__2_0)
+   - 117.7215621558109 b_diam_on_P1(28_b__38__2_0)
+   - 143.8094429659629 b_diam_on_P1(28_b__42__2_0) <= 0
+ c_u_OnshoreFlowAfterBuild(25_a_2045_low_utilization)_:
+   q_on(25_a_2045_low_utilization) - 150 z_on_P1(25_a_2030)
+   - 150 z_on_P1(25_a_2035) - 150 z_on_P1(25_a_2040)
+   - 150 z_on_P1(25_a_2045) <= 0
+ c_u_OnshoreFlowAfterBuild(28_b_2045_low_utilization)_:
+   q_on(28_b_2045_low_utilization) - 150 z_on_P1(28_b_2030)
+   - 150 z_on_P1(28_b_2035) - 150 z_on_P1(28_b_2040)
+   - 150 z_on_P1(28_b_2045) <= 0
+ c_u_OnshoreFlowAfterBuild(70_a_2045_low_utilization)_:
+   q_on(70_a_2045_low_utilization) - 150 z_on_P1(70_a_2030)
+   - 150 z_on_P1(70_a_2035) - 150 z_on_P1(70_a_2040)
+   - 150 z_on_P1(70_a_2045) <= 0
+ c_u_OnshoreConstrNeedsDiam_P1(70_a_2030)_: - b_diam_on_P1(70_a__6__2_0)
+   - b_diam_on_P1(70_a__10__2_0) - b_diam_on_P1(70_a__14__2_0)
+   - b_diam_on_P1(70_a__18__2_0) - b_diam_on_P1(70_a__22__2_0)
+   - b_diam_on_P1(70_a__26__2_0) - b_diam_on_P1(70_a__30__2_0)
+   - b_diam_on_P1(70_a__34__2_0) - b_diam_on_P1(70_a__38__2_0)
+   - b_diam_on_P1(70_a__42__2_0) + z_on_P1(70_a_2030) <= 0
+ c_u_OnshoreConstrNeedsDiam_P1(70_a_2035)_: - b_diam_on_P1(70_a__6__2_0)
+   - b_diam_on_P1(70_a__10__2_0) - b_diam_on_P1(70_a__14__2_0)
+   - b_diam_on_P1(70_a__18__2_0) - b_diam_on_P1(70_a__22__2_0)
+   - b_diam_on_P1(70_a__26__2_0) - b_diam_on_P1(70_a__30__2_0)
+   - b_diam_on_P1(70_a__34__2_0) - b_diam_on_P1(70_a__38__2_0)
+   - b_diam_on_P1(70_a__42__2_0) + z_on_P1(70_a_2035) <= 0
+ c_u_OnshoreConstrNeedsDiam_P1(70_a_2040)_: - b_diam_on_P1(70_a__6__2_0)
+   - b_diam_on_P1(70_a__10__2_0) - b_diam_on_P1(70_a__14__2_0)
+   - b_diam_on_P1(70_a__18__2_0) - b_diam_on_P1(70_a__22__2_0)
+   - b_diam_on_P1(70_a__26__2_0) - b_diam_on_P1(70_a__30__2_0)
+   - b_diam_on_P1(70_a__34__2_0) - b_diam_on_P1(70_a__38__2_0)
+   - b_diam_on_P1(70_a__42__2_0) + z_on_P1(70_a_2040) <= 0
+ c_u_OnshoreConstrNeedsDiam_P1(70_a_2045)_: - b_diam_on_P1(70_a__6__2_0)
+   - b_diam_on_P1(70_a__10__2_0) - b_diam_on_P1(70_a__14__2_0)
+   - b_diam_on_P1(70_a__18__2_0) - b_diam_on_P1(70_a__22__2_0)
+   - b_diam_on_P1(70_a__26__2_0) - b_diam_on_P1(70_a__30__2_0)
+   - b_diam_on_P1(70_a__34__2_0) - b_diam_on_P1(70_a__38__2_0)
+   - b_diam_on_P1(70_a__42__2_0) + z_on_P1(70_a_2045) <= 0
+ c_e_FixedEmitterPressure(13_2050_low_utilization)_:
+   pi_node(13_2050_low_utilization) = 150
+ c_e_FixedEmitterPressure(16_2050_low_utilization)_:
+   pi_node(16_2050_low_utilization) = 150
+ c_u_PressDropOnshore_LB(28_b_2050_low_utilization)_:
+   - 250.8971985739873 b_diam_on_P1(28_b__6__2_0)
+   - 137.4755543460793 b_diam_on_P1(28_b__10__2_0)
+   - 94.40188518540356 b_diam_on_P1(28_b__14__2_0)
+   - 71.97243540867534 b_diam_on_P1(28_b__18__2_0)
+   - 58.8349678772584 b_diam_on_P1(28_b__22__2_0)
+   - 49.51315339319699 b_diam_on_P1(28_b__26__2_0)
+   - 43.0992706687998 b_diam_on_P1(28_b__30__2_0)
+   - 38.18104038585426 b_diam_on_P1(28_b__34__2_0)
+   - 34.1772619375762 b_diam_on_P1(28_b__38__2_0)
+   - 30.77740897929212 b_diam_on_P1(28_b__42__2_0) + 250 z_on_P1(28_b_2030)
+   + 250 z_on_P1(28_b_2035) + 250 z_on_P1(28_b_2040)
+   + 250 z_on_P1(28_b_2045) + 250 z_on_P1(28_b_2050)
+   + pi_orig(28_b_2050_low_utilization)
+   - pi_dest(28_b_2050_low_utilization) + 50 brep_on1_P1(28_b_2050)
+   + 50 brep_on2_P1(28_b_2050) <= 250
+ c_e_OriginPressureLink(28_b_2050_low_utilization)_:
+   - pi_node(16_2050_low_utilization) + pi_orig(28_b_2050_low_utilization)
+   = 0
+ c_e_FixedEmitterTemperature(16_2045_low_utilization)_:
+   theta_node(16_2045_low_utilization) = 40
+ c_e_FixedEmitterTemperature(16_2045_high_utilization)_:
+   theta_node(16_2045_high_utilization) = 40
+ c_e_FixedEmitterTemperature(16_2050_high_utilization)_:
+   theta_node(16_2050_high_utilization) = 40
+ c_u_ColdPointMinTemp(25_a_2045_high_utilization)_:
+   41.70966545240153 b_diam_on_P1(25_a__6__2_0)
+   + 35.12784243782268 b_diam_on_P1(25_a__10__2_0)
+   + 30.11287010081151 b_diam_on_P1(25_a__14__2_0)
+   + 26.31845393242922 b_diam_on_P1(25_a__18__2_0)
+   + 23.4503850399524 b_diam_on_P1(25_a__22__2_0)
+   + 21.14799686909715 b_diam_on_P1(25_a__26__2_0)
+   + 19.30241213217753 b_diam_on_P1(25_a__30__2_0)
+   + 17.78738815999782 b_diam_on_P1(25_a__34__2_0)
+   + 16.50250328671283 b_diam_on_P1(25_a__38__2_0)
+   + 15.41027795414587 b_diam_on_P1(25_a__42__2_0) + 100 z_on_P1(25_a_2030)
+   + 100 z_on_P1(25_a_2035) + 100 z_on_P1(25_a_2040)
+   + 100 z_on_P1(25_a_2045) - 10 brep_on1_P1(25_a_2045)
+   - 10 brep_on2_P1(25_a_2045) - theta_orig(25_a_2045_high_utilization)
+   <= 65
+ c_u_ColdPointMinTemp(28_b_2050_high_utilization)_:
+   49.21934903713652 b_diam_on_P1(28_b__6__2_0)
+   + 44.58063024692746 b_diam_on_P1(28_b__10__2_0)
+   + 39.88987541305318 b_diam_on_P1(28_b__14__2_0)
+   + 36.02849248390881 b_diam_on_P1(28_b__18__2_0)
+   + 32.8017479696129 b_diam_on_P1(28_b__22__2_0)
+   + 30.21507250148566 b_diam_on_P1(28_b__26__2_0)
+   + 28.10958771196741 b_diam_on_P1(28_b__30__2_0)
+   + 26.3325248787659 b_diam_on_P1(28_b__34__2_0)
+   + 24.83681416367833 b_diam_on_P1(28_b__38__2_0)
+   + 23.5797909127507 b_diam_on_P1(28_b__42__2_0) + 100 z_on_P1(28_b_2030)
+   + 100 z_on_P1(28_b_2035) + 100 z_on_P1(28_b_2040)
+   + 100 z_on_P1(28_b_2045) + 100 z_on_P1(28_b_2050)
+   - 10 brep_on1_P1(28_b_2050) - 10 brep_on2_P1(28_b_2050)
+   - theta_orig(28_b_2050_high_utilization) <= 65
+ c_u_ColdPointMinTemp(70_a_2045_low_utilization)_:
+   42.21713495184302 b_diam_on_P1(70_a__6__2_0)
+   + 38.46352912871664 b_diam_on_P1(70_a__10__2_0)
+   + 34.20589694094516 b_diam_on_P1(70_a__14__2_0)
+   + 30.42084185675243 b_diam_on_P1(70_a__18__2_0)
+   + 27.32361815451244 b_diam_on_P1(70_a__22__2_0)
+   + 24.90699801499327 b_diam_on_P1(70_a__26__2_0)
+   + 22.8890302211182 b_diam_on_P1(70_a__30__2_0)
+   + 21.20871864871908 b_diam_on_P1(70_a__34__2_0)
+   + 19.71937465152229 b_diam_on_P1(70_a__38__2_0)
+   + 18.47164536570828 b_diam_on_P1(70_a__42__2_0) + 100 z_on_P1(70_a_2030)
+   + 100 z_on_P1(70_a_2035) + 100 z_on_P1(70_a_2040)
+   + 100 z_on_P1(70_a_2045) - 10 brep_on1_P1(70_a_2045)
+   - 10 brep_on2_P1(70_a_2045) - theta_orig(70_a_2045_low_utilization)
+   <= 65
+ c_e_OriginTemperatureLink(25_a_2045_high_utilization)_:
+   - theta_node(16_2045_high_utilization)
+   + theta_orig(25_a_2045_high_utilization) = 0
+ c_e_OriginTemperatureLink(28_b_2050_high_utilization)_:
+   - theta_node(16_2050_high_utilization)
+   + theta_orig(28_b_2050_high_utilization) = 0
+ c_e_OriginTemperatureLink(70_a_2045_low_utilization)_:
+   - theta_node(16_2045_low_utilization)
+   + theta_orig(70_a_2045_low_utilization) = 0
+ c_u_NodePressTol_LB(13_28_b_2050_low_utilization)_: 250 z_on_P1(28_b_2030)
+   + 250 z_on_P1(28_b_2035) + 250 z_on_P1(28_b_2040)
+   + 250 z_on_P1(28_b_2045) + 250 z_on_P1(28_b_2050)
+   - pi_node(13_2050_low_utilization) + pi_dest(28_b_2050_low_utilization)
+   <= 280
+ c_u_BoosterOnshoreActivation_P1(25_a_2045)_: - z_on_P1(25_a_2030)
+   - z_on_P1(25_a_2035) - z_on_P1(25_a_2040) - z_on_P1(25_a_2045)
+   + brep_on1_P1(25_a_2045) + brep_on2_P1(25_a_2045) <= 0
+ c_u_BoosterOnshoreActivation_P1(70_a_2045)_: - z_on_P1(70_a_2030)
+   - z_on_P1(70_a_2035) - z_on_P1(70_a_2040) - z_on_P1(70_a_2045)
+   + brep_on1_P1(70_a_2045) + brep_on2_P1(70_a_2045) <= 0
+ c_u_CaptureLimit(7_2045_low_utilization)_: qcap(7_2045_low_utilization)
+   <= 0.8
+ c_u_CaptureLimit(8_2045_low_utilization)_: qcap(8_2045_low_utilization)
+   <= 4.08
+ c_u_CaptureLimit(9_2045_low_utilization)_: qcap(9_2045_low_utilization)
+   <= 0.27
+ c_u_CaptureLimit(10_2045_low_utilization)_: qcap(10_2045_low_utilization)
+   <= 57.41
+ c_u_CaptureLimit(11_2045_low_utilization)_: qcap(11_2045_low_utilization)
+   <= 128.46
+ c_u_CaptureLimit(12_2045_low_utilization)_: qcap(12_2045_low_utilization)
+   <= 26.92
+ c_u_CaptureLimit(13_2045_low_utilization)_: qcap(13_2045_low_utilization)
+   <= 63.92
+ c_u_CaptureLimit(14_2045_low_utilization)_: qcap(14_2045_low_utilization)
+   <= 54.12
+ c_u_CaptureLimit(15_2045_low_utilization)_: qcap(15_2045_low_utilization)
+   <= 69.76
+ c_u_CaptureLimit(17_2045_low_utilization)_: qcap(17_2045_low_utilization)
+   <= 74.21
+ c_u_CaptureLimit(18_2045_low_utilization)_: qcap(18_2045_low_utilization)
+   <= 28.51
+ c_l_CaptureTargetPerScen_LB(2045_low_utilization)_:
+   qcap(7_2045_low_utilization) + qcap(8_2045_low_utilization)
+   + qcap(9_2045_low_utilization) + qcap(10_2045_low_utilization)
+   + qcap(11_2045_low_utilization) + qcap(12_2045_low_utilization)
+   + qcap(13_2045_low_utilization) + qcap(14_2045_low_utilization)
+   + qcap(15_2045_low_utilization) + qcap(16_2045_low_utilization)
+   + qcap(17_2045_low_utilization) + qcap(18_2045_low_utilization)
+   >= 515.333
+Bounds
+ qcap(7_2045_low_utilization) free
+ qcap(8_2045_low_utilization) free
+ qcap(9_2045_low_utilization) free
+ qcap(10_2045_low_utilization) free
+ qcap(11_2045_low_utilization) free
+ qcap(12_2045_low_utilization) free
+ qcap(13_2045_low_utilization) free
+ qcap(14_2045_low_utilization) free
+ qcap(15_2045_low_utilization) free
+ qcap(16_2045_low_utilization) free
+ qcap(17_2045_low_utilization) free
+ qcap(18_2045_low_utilization) free
+ q_on(28_b_2045_low_utilization) free
+ q_on(25_a_2045_low_utilization) free
+ q_on(70_a_2045_low_utilization) free
+ pi_node(13_2050_low_utilization) free
+ pi_node(16_2050_low_utilization) free
+ pi_orig(28_b_2050_low_utilization) free
+ pi_dest(28_b_2050_low_utilization) free
+ theta_node(16_2045_low_utilization) free
+ theta_node(16_2045_high_utilization) free
+ theta_node(16_2050_high_utilization) free
+ theta_orig(25_a_2045_high_utilization) free
+ theta_orig(28_b_2050_high_utilization) free
+ theta_orig(70_a_2045_low_utilization) free
+Binaries
+ b_diam_on_P1(25_a__6__2_0) b_diam_on_P1(25_a__10__2_0)
+ b_diam_on_P1(25_a__14__2_0) b_diam_on_P1(25_a__18__2_0)
+ b_diam_on_P1(25_a__22__2_0) b_diam_on_P1(25_a__26__2_0)
+ b_diam_on_P1(25_a__30__2_0) b_diam_on_P1(25_a__34__2_0)
+ b_diam_on_P1(25_a__38__2_0) b_diam_on_P1(25_a__42__2_0)
+ b_diam_on_P1(28_b__6__2_0) b_diam_on_P1(28_b__10__2_0)
+ b_diam_on_P1(28_b__14__2_0) b_diam_on_P1(28_b__18__2_0)
+ b_diam_on_P1(28_b__22__2_0) b_diam_on_P1(28_b__26__2_0)
+ b_diam_on_P1(28_b__30__2_0) b_diam_on_P1(28_b__34__2_0)
+ b_diam_on_P1(28_b__38__2_0) b_diam_on_P1(28_b__42__2_0)
+ b_diam_on_P1(70_a__6__2_0) b_diam_on_P1(70_a__10__2_0)
+ b_diam_on_P1(70_a__14__2_0) b_diam_on_P1(70_a__18__2_0)
+ b_diam_on_P1(70_a__22__2_0) b_diam_on_P1(70_a__26__2_0)
+ b_diam_on_P1(70_a__30__2_0) b_diam_on_P1(70_a__34__2_0)
+ b_diam_on_P1(70_a__38__2_0) b_diam_on_P1(70_a__42__2_0) z_on_P1(25_a_2030)
+ z_on_P1(25_a_2035) z_on_P1(25_a_2040) z_on_P1(25_a_2045)
+ z_on_P1(28_b_2030) z_on_P1(28_b_2035) z_on_P1(28_b_2040)
+ z_on_P1(28_b_2045) z_on_P1(28_b_2050) z_on_P1(70_a_2030)
+ z_on_P1(70_a_2035) z_on_P1(70_a_2040) z_on_P1(70_a_2045)
+ brep_on1_P1(25_a_2045) brep_on2_P1(25_a_2045) brep_on1_P1(28_b_2050)
+ brep_on2_P1(28_b_2050) brep_on1_P1(70_a_2045) brep_on2_P1(70_a_2045)
+End

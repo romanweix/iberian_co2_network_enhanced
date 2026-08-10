@@ -108,11 +108,18 @@ print("Phase 1 termination:", term1)
 
 # If Phase 1 is infeasible/unbounded, stop (warm-start makes no sense)
 if term1 in (tc.infeasible, tc.unbounded, tc.infeasibleOrUnbounded):
-    print("⚠️  Phase 1 reported infeasible/unbounded. Running infeasibility logger...")
-    from pyomo.util.infeasible import log_infeasible_constraints
-    import logging
-    logging.getLogger('pyomo').setLevel(logging.INFO)
-    log_infeasible_constraints(m, tol=1e-6, log_expression=True)
+    print("⚠️  Phase 1 reported infeasible/unbounded.")
+    iis_path = os.path.abspath("output_developed_model/phase1_infeasible.ilp")
+    os.makedirs(os.path.dirname(iis_path), exist_ok=True)
+    # No variable values exist after an infeasible solve, so Pyomo's constraint-body
+    # logger can't evaluate anything (hence the "evaluation error" spam it produced).
+    # Ask Gurobi directly for the irreducible infeasible subsystem instead: setting
+    # ResultFile to a .ilp path makes it compute and write the IIS on infeasibility.
+    solver.options["DualReductions"] = 0  # force a definitive infeasible/unbounded determination
+    solver.options["ResultFile"] = iis_path
+    solver.solve(m, tee=False, symbolic_solver_labels=True)
+    print(f"⚠️  Irreducible infeasible subsystem written to {iis_path}")
+    print("    Open it to see exactly which constraints/bounds conflict.")
     sys.exit(1)
 
 # --------------------------------------------------------------
@@ -133,11 +140,14 @@ print("Phase 2 termination:", term2)
 # With a MIPGap, you may get 'optimal' or just 'feasible' depending on the interface;
 # accept feasible solutions, but reject infeasible/unbounded.
 if term2 in (tc.infeasible, tc.unbounded, tc.infeasibleOrUnbounded):
-    print("⚠️  Phase 2 reported infeasible/unbounded. Running infeasibility logger...")
-    from pyomo.util.infeasible import log_infeasible_constraints
-    import logging
-    logging.getLogger('pyomo').setLevel(logging.INFO)
-    log_infeasible_constraints(m, tol=1e-6, log_expression=True)
+    print("⚠️  Phase 2 reported infeasible/unbounded.")
+    iis_path = os.path.abspath("output_developed_model/phase2_infeasible.ilp")
+    os.makedirs(os.path.dirname(iis_path), exist_ok=True)
+    solver.options["DualReductions"] = 0  # force a definitive infeasible/unbounded determination
+    solver.options["ResultFile"] = iis_path
+    solver.solve(m, tee=False, symbolic_solver_labels=True)
+    print(f"⚠️  Irreducible infeasible subsystem written to {iis_path}")
+    print("    Open it to see exactly which constraints/bounds conflict.")
     sys.exit(1)
 
 if term2 != tc.optimal and term2 != tc.feasible:
