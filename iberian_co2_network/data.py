@@ -487,7 +487,7 @@ COST_PER_INCH_EUR = 40 # in €/m
 cost_per_inch = COST_PER_INCH_EUR * 1e3 / 1e6 # in M€/km
 
 # Surcharge on COST_PER_INCH_EUR for insulated onshore pipelines, in %
-ONSHORE_INSULATION_SURCHARGE_PCT = 80 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
+ONSHORE_INSULATION_SURCHARGE_PCT = 20 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
 
 # complete set of diameters - 39 possible options
 # diameter_inch_str = [
@@ -1089,7 +1089,7 @@ dP_elev drop parameters.
 
 """
 
-U_VALUES = [0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+U_VALUES = [2.0] #[0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
 SIM_P_START_BAR = 150.0  # fixed origin pressure used by the pipeline simulation
 
 pipe_sim_results_df = pd.read_excel(
