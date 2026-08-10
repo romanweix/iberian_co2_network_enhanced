@@ -239,6 +239,16 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
 
         ax.add_collection(LineCollection(segs, colors=cols, linewidths=3, zorder=4))
 
+        # Thin temperature line offset next to the pressure line (onshore only, where
+        # the simulated temperature drops actually apply) so the map doesn't get overloaded
+        if is_on and diam_selected is not None and u_selected is not None:
+            theta_init = pyo.value(m.theta_orig[p, t_match, w])
+            theta_final = pyo.value(m.theta_dest[p, t_match, w])
+            theta_crit = theta_init - DATA["Theta_pmax"][(p, diam_selected, u_selected)]
+            temp_segs, temp_cols = _pipe_segments_temp(geom, theta_init, theta_crit, theta_final, L, Lh)
+            temp_segs = _offset_segments(temp_segs, offset=0.03)
+            ax.add_collection(LineCollection(temp_segs, colors=temp_cols, linewidths=1.2, zorder=4.1))
+
         # ------------------------------------------------------------------
         # Diameter label [inch]
         # ------------------------------------------------------------------
@@ -377,6 +387,55 @@ def _pressure_color(p_bar):
     """Return the RGBA color for a given pressure [bar]."""
     return _pressure_cmap(_pressure_norm(p_bar))
 
+# -----------------------------------------------------------------------
+# GLOBAL temperature colormap: 20 -> 45 °C (blue-red), onshore only
+# -----------------------------------------------------------------------
+_temperature_cmap = plt.cm.RdYlBu_r
+_temperature_norm = mpl.colors.Normalize(vmin=20, vmax=45)
+
+def _temperature_color(theta_c):
+    """Return the RGBA color for a given temperature [°C]."""
+    return _temperature_cmap(_temperature_norm(theta_c))
+
+def _offset_segments(segs, offset):
+    """Shift a list of [[x0,y0],[x1,y1]] segments perpendicular to their local
+    direction by `offset` (map units), so a second line can be drawn next to
+    the first without fully overlapping it."""
+    out = []
+    for (x0, y0), (x1, y1) in segs:
+        dx, dy = x1 - x0, y1 - y0
+        length = np.hypot(dx, dy)
+        nx, ny = (0.0, 0.0) if length < 1e-12 else (-dy / length, dx / length)
+        out.append([[x0 + nx * offset, y0 + ny * offset], [x1 + nx * offset, y1 + ny * offset]])
+    return out
+
+def _pipe_segments_temp(geom, theta_init, theta_crit, theta_final, L, Lh):
+    """Same two-piece linear profile as _pipe_segments_with_gradient, but for
+    temperature and without booster handling (kept simple to avoid cluttering
+    the map with a second set of booster markers)."""
+    N = 200
+    total_len_deg = geom.length
+    frac_crit = 0.0 if L <= 0 else np.clip(Lh / max(L, 1e-9), 0.0, 1.0)
+    dists = np.linspace(0, total_len_deg, N + 1)
+    points = [geom.interpolate(d) for d in dists]
+
+    theta_vals = []
+    for f in (dists / total_len_deg if total_len_deg > 0 else np.linspace(0, 1, N + 1)):
+        if f <= frac_crit:
+            th = theta_init + (theta_crit - theta_init) * (0 if frac_crit == 0 else (f / frac_crit))
+        else:
+            denom = (1 - frac_crit) if (1 - frac_crit) > 0 else 1.0
+            th = theta_crit + (theta_final - theta_crit) * ((f - frac_crit) / denom)
+        theta_vals.append(th)
+
+    segs, cols = [], []
+    for i in range(N):
+        x0, y0 = points[i].x, points[i].y
+        x1, y1 = points[i + 1].x, points[i + 1].y
+        segs.append([[x0, y0], [x1, y1]])
+        cols.append(_temperature_color((theta_vals[i] + theta_vals[i + 1]) / 2))
+    return segs, cols
+
 def _pipe_segments_with_gradient(geom, p_init, p_high, p_final, L, Lh,
                                  boost_delta=50, thresh=100):
     """
@@ -499,17 +558,27 @@ def plot_network(m, DATA, scenario="base_utilization", year=2050,
     add_nodes(ax, DATA)
     add_pipes(ax, DATA, m, year=year, w=scenario)
 
-    # Colorbar
-    sm = plt.cm.ScalarMappable(
+    # Colorbars (narrower now that there are two, side by side)
+    sm_p = plt.cm.ScalarMappable(
         cmap=_pressure_cmap_colorbar,
         norm=mpl.colors.Normalize(vmin=100, vmax=160)
     )
-    sm.set_array([])
-    cbar_ax = fig.add_axes([0.25, 0.075, 0.5, 0.015])
-    cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
-    cbar.set_ticks([100, 110, 120, 130, 140, 150, 160])
-    cbar.set_ticklabels(["100", "110", "120", "130", "140", "150", "+150"])
-    cbar.set_label("Pressure [bar]")
+    sm_p.set_array([])
+    cbar_p_ax = fig.add_axes([0.13, 0.075, 0.32, 0.015])
+    cbar_p = fig.colorbar(sm_p, cax=cbar_p_ax, orientation="horizontal")
+    cbar_p.set_ticks([100, 110, 120, 130, 140, 150, 160])
+    cbar_p.set_ticklabels(["100", "110", "120", "130", "140", "150", "+150"])
+    cbar_p.set_label("Pressure [bar]", fontsize=8)
+    cbar_p.ax.tick_params(labelsize=7)
+
+    sm_t = plt.cm.ScalarMappable(cmap=_temperature_cmap, norm=_temperature_norm)
+    sm_t.set_array([])
+    cbar_t_ax = fig.add_axes([0.55, 0.075, 0.32, 0.015])
+    cbar_t = fig.colorbar(sm_t, cax=cbar_t_ax, orientation="horizontal")
+    cbar_t.set_ticks([20, 25, 30, 35, 40, 45])
+    cbar_t.set_label("Onshore temperature [°C]", fontsize=8)
+    cbar_t.ax.tick_params(labelsize=7)
+    cbar = cbar_p  # keep the badge font-size lookup below working unchanged
 
 
     # --- Badge showing the time step (top-right) ---------------------------
