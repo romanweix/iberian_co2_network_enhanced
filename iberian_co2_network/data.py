@@ -487,7 +487,7 @@ COST_PER_INCH_EUR = 40 # in €/m
 cost_per_inch = COST_PER_INCH_EUR * 1e3 / 1e6 # in M€/km
 
 # Surcharge on COST_PER_INCH_EUR for insulated onshore pipelines, in %
-ONSHORE_INSULATION_SURCHARGE_PCT = 20 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
+ONSHORE_INSULATION_SURCHARGE_PCT = 80 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
 
 # complete set of diameters - 39 possible options
 # diameter_inch_str = [
@@ -1089,7 +1089,11 @@ dP_elev drop parameters.
 
 """
 
-U_VALUES = [2.0] #[0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+U_VALUES = [2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+# Forced to [2.0] only to run a "no insulation" scenario: the solver can no longer choose
+# u=0.43 for any onshore pipeline/diameter, while every pressure/temperature constraint in
+# developed_model.py is untouched (they all iterate generically over m.U). Restore
+# U_VALUES = [0.43, 2.0] to bring back the normal endogenous insulation decision.
 SIM_P_START_BAR = 150.0  # fixed origin pressure used by the pipeline simulation
 
 pipe_sim_results_df = pd.read_excel(
@@ -1100,20 +1104,30 @@ pipe_sim_results_df = pd.read_excel(
 # silently produce '6.0' and break every dict lookup against the D set.
 pipe_sim_results_df['D [inch]'] = pipe_sim_results_df['D [inch]'].round().astype(int).astype(str)
 
+# Only keep simulation rows whose U-value is actually part of U_VALUES: Pyomo's
+# Param(initialize=<dict>) validates every dict key against the component's index set
+# (m.P_on * m.D * m.U) at construction time, so a leftover u=0.43 entry would raise a
+# KeyError as soon as U_VALUES is narrowed to [2.0] for a "no insulation" run.
+_active_u = set(U_VALUES)
+_sim_rows_active_u = [
+    r for _, r in pipe_sim_results_df.iterrows()
+    if float(r['U-Wert [W/m^2/K]']) in _active_u
+]
+
 # Pressure drop from origin to the pipe end (already a drop in the simulation output)
 Pi_dest = {
     (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): float(r['p_end [bar]'])
-    for _, r in pipe_sim_results_df.iterrows()
+    for r in _sim_rows_active_u
 }
 # Drop from origin to the critical minimum-pressure point along the pipe
 Pi_pmax = {
     (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_P_START_BAR - float(r['p_max p[bar]'])
-    for _, r in pipe_sim_results_df.iterrows()
+    for r in _sim_rows_active_u
 }
 # Drop from origin to the coldest point along the pipe
 Pi_theta = {
     (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_P_START_BAR - float(r['t_min p [bar]'])
-    for _, r in pipe_sim_results_df.iterrows()
+    for r in _sim_rows_active_u
 }
 
 # Temperature drops (same conversion logic as the Pi_* pressure drops above), using the
@@ -1123,17 +1137,17 @@ SIM_T_START_C = 40.0
 # Temperature drop from origin to the pipe end (already a drop in the simulation output)
 Theta_dest = {
     (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): float(r['t_end [°C]'])
-    for _, r in pipe_sim_results_df.iterrows()
+    for r in _sim_rows_active_u
 }
 # Temperature drop from origin to the critical minimum-pressure point along the pipe
 Theta_pmax = {
     (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_T_START_C - float(r['p_max T [°C]'])
-    for _, r in pipe_sim_results_df.iterrows()
+    for r in _sim_rows_active_u
 }
 # Temperature drop from origin to the coldest point along the pipe
 Theta_cold = {
     (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_T_START_C - float(r['t_min T[°C]'])
-    for _, r in pipe_sim_results_df.iterrows()
+    for r in _sim_rows_active_u
 }
 
 # Insulated (u = 0.43) onshore pipe CAPEX/OPEX surcharge vs. non-insulated (u = 2.0),
