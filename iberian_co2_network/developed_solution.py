@@ -431,6 +431,44 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
             + sum(value(m.c_pipe_on_P2[p, t, w]) for p in m.P2_on)
         )
 
+    def capex_pipe_on_insulation_year(yr):
+        """Portion of capex_pipe_on_year attributable to the insulation surcharge (u = 0.43 vs. 2.0)."""
+        t = _t(yr)
+        if t is None:
+            return 0.0
+        total = 0.0
+        for p in m.P1_on:
+            z = value(m.z_on_P1[p, t])
+            if z <= 0.5:
+                continue
+            for d in m.D:
+                for u in m.U:
+                    if abs(u - NOT_INSULATED_U) <= 1e-9:
+                        continue
+                    bd = value(m.b_diam_on_P1[p, d, u])
+                    if bd <= 0.5:
+                        continue
+                    extra = value(m.cins_on[d, u, t]) - value(m.cins_on[d, NOT_INSULATED_U, t])
+                    if extra <= 1e-12:
+                        continue
+                    total += extra * value(m.L_on[p]) * value(m.pen_city[p]) * value(m.pen_slope[p])
+        for p in m.P2_on:
+            z = value(m.z_on_P2[p, t, w])
+            if z <= 0.5:
+                continue
+            for d in m.D:
+                for u in m.U:
+                    if abs(u - NOT_INSULATED_U) <= 1e-9:
+                        continue
+                    bd = value(m.b_diam_on_P2[p, d, u, w])
+                    if bd <= 0.5:
+                        continue
+                    extra = value(m.cins_on[d, u, t]) - value(m.cins_on[d, NOT_INSULATED_U, t])
+                    if extra <= 1e-12:
+                        continue
+                    total += extra * value(m.L_on[p]) * value(m.pen_city[p]) * value(m.pen_slope[p])
+        return total
+
     def capex_pipe_off_year(yr):
         t = _t(yr)
         if t is None:
@@ -630,6 +668,7 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
         ("Capture cost", total_by_year(capture_cost_year)),
         ("Injection cost", total_by_year(injection_cost_year)),
         ("CAPEX onshore pipe", total_by_year(capex_pipe_on_year)),
+        ("CAPEX onshore pipe (insulation only)", total_by_year(capex_pipe_on_insulation_year)),
         ("CAPEX offshore pipe", total_by_year(capex_pipe_off_year)),
         ("CAPEX initial boosting stations", total_by_year(capex_init_year)),
         ("CAPEX additional boosting stations", total_by_year(capex_boost_year)),
@@ -647,7 +686,7 @@ def create_cost_breakdown(m, w: str, years=None) -> pd.DataFrame:
 
     # Memo rows are informational breakdowns of another row's value and must be
     # excluded from the TOTAL, since their amount is already counted there.
-    memo_only = {"OPEX onshore pipe (insulation only)"}
+    memo_only = {"CAPEX onshore pipe (insulation only)", "OPEX onshore pipe (insulation only)"}
 
     recs = []
     for name, dic in rows:

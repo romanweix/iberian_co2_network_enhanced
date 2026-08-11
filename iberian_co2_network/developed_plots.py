@@ -1,12 +1,13 @@
 # developed_plots.py
 
 from pathlib import Path as PPath
+from collections import defaultdict
 import matplotlib as mpl
 from matplotlib.path import Path as MplPath
 import matplotlib.pyplot as plt
 import pandas as pd, geopandas as gpd
 import numpy as np
-from shapely.geometry import Point
+from shapely.geometry import Point, LineString
 import matplotlib.lines as mlines
 from matplotlib.collections import LineCollection
 from matplotlib.patches import PathPatch
@@ -173,6 +174,27 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
     # 2) overlay using results
     t_match = next(t for t in m.T if int(t) == year)
 
+    # Pre-pass: find which pipelines are active (built & carrying flow), so that
+    # when both directions of the same route are active below, their draw
+    # geometry can be offset apart instead of overlapping.
+    def _is_active_pipe(p):
+        if p in m.P_on:
+            act = pyo.value(m.act_on[p, t_match, w]) > 0.5
+            flow = any(pyo.value(m.q_on[p, tt, w]) > 0.1 for tt in m.T)
+        else:
+            act = (pyo.value(m.act_off[p, t_match, w]) +
+                   (pyo.value(m.b_ship[p, t_match, w]) if p in m.P_off else 0.0)) > 0.5
+            flow = any(pyo.value(m.q_off[p, tt, w]) > 0.1 for tt in m.T)
+        return act and flow
+
+    def _route_key(p):
+        return frozenset((DATA["start"][p], DATA["end"][p]))
+
+    active_by_route = defaultdict(list)
+    for p in list(m.P_on) + list(m.P_off):
+        if _is_active_pipe(p):
+            active_by_route[_route_key(p)].append(p)
+
     for p in list(m.P_on) + list(m.P_off):
         is_on = (p in m.P_on)
 
@@ -229,8 +251,17 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
         L    = DATA["L"][p]
         Lh   = DATA["Lh"][p] if is_on else 0.0
 
+        # If the opposite-direction pipeline on this same route is also active,
+        # offset this pipeline's whole draw geometry to one side so both lines
+        # (and their pressure/temperature gradients, insulation highlight, and
+        # diameter label) stay visible side by side instead of overlapping.
+        if len(active_by_route[_route_key(p)]) > 1:
+            geom_draw = _offset_linestring(geom, _LANE_OFFSET_DEG)
+        else:
+            geom_draw = geom
+
         segs, cols, booster_xy, booster_dir = _pipe_segments_with_gradient(
-            geom, pi_init, p_high, pi_final, L, Lh
+            geom_draw, pi_init, p_high, pi_final, L, Lh
         )
 
         # Highlight insulated onshore pipelines with a yellow outline behind the pressure-gradient line
@@ -245,7 +276,7 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
             theta_init = pyo.value(m.theta_orig[p, t_match, w])
             theta_final = pyo.value(m.theta_dest[p, t_match, w])
             theta_crit = theta_init - DATA["Theta_pmax"][(p, diam_selected, u_selected)]
-            temp_segs, temp_cols = _pipe_segments_temp(geom, theta_init, theta_crit, theta_final, L, Lh)
+            temp_segs, temp_cols = _pipe_segments_temp(geom_draw, theta_init, theta_crit, theta_final, L, Lh)
             temp_segs = _offset_segments(temp_segs, offset=0.03)
             ax.add_collection(LineCollection(temp_segs, colors=temp_cols, linewidths=1.2, zorder=4.1))
 
@@ -255,7 +286,7 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
         # diam is already defined (b_diam_on/off)
         label = f'⌀ {diam_selected}'                          # e.g., 30"
 
-        mid_pt = geom.interpolate(0.5, normalized=True)       # midpoint
+        mid_pt = geom_draw.interpolate(0.5, normalized=True)   # midpoint
         label_centers = []
 
         # --- list of offsets to try (in points) ----------------------------
@@ -275,7 +306,7 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
         # active pipelines (only the current p) as a list of LineString
         active_lines = []               # filled once per pipeline
         if active and has_flow_any_t:
-            active_lines.append(geom)   # geom is the LineString of this pipeline
+            active_lines.append(geom_draw)   # the offset "lane" actually drawn for this pipeline
 
         def overlaps(pt, tol=0.15):
             """Return True if 'pt' is too close to nodes or pipelines."""
@@ -408,6 +439,38 @@ def _offset_segments(segs, offset):
         nx, ny = (0.0, 0.0) if length < 1e-12 else (-dy / length, dx / length)
         out.append([[x0 + nx * offset, y0 + ny * offset], [x1 + nx * offset, y1 + ny * offset]])
     return out
+
+# Perpendicular offset (map degrees) applied to a pipeline's whole draw geometry
+# when both directions of the same route (opposite-direction pipeline pair) are
+# active, so the two lines run side by side instead of on top of each other.
+_LANE_OFFSET_DEG = 0.035
+
+def _offset_linestring(geom, offset):
+    """Shift a LineString perpendicular to its own local direction by `offset`
+    (map units). Each pipeline's coordinate order encodes its flow direction,
+    so a route's two opposite-direction pipelines get local normals that point
+    to opposite sides -- offsetting both by the same signed `offset` therefore
+    separates them onto opposite sides of the shared route automatically."""
+    coords = list(geom.coords)
+    if len(coords) < 2:
+        return geom
+    normals = []
+    for (x0, y0), (x1, y1) in zip(coords[:-1], coords[1:]):
+        dx, dy = x1 - x0, y1 - y0
+        length = np.hypot(dx, dy)
+        normals.append((0.0, 0.0) if length < 1e-12 else (-dy / length, dx / length))
+    new_coords = []
+    for i in range(len(coords)):
+        if i == 0:
+            nx, ny = normals[0]
+        elif i == len(coords) - 1:
+            nx, ny = normals[-1]
+        else:
+            nx = (normals[i - 1][0] + normals[i][0]) / 2
+            ny = (normals[i - 1][1] + normals[i][1]) / 2
+        x, y = coords[i]
+        new_coords.append((x + nx * offset, y + ny * offset))
+    return LineString(new_coords)
 
 def _pipe_segments_temp(geom, theta_init, theta_crit, theta_final, L, Lh):
     """Same two-piece linear profile as _pipe_segments_with_gradient, but for
