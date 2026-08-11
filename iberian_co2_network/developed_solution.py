@@ -133,6 +133,7 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
     P1_off, P2_off = set(m.P1_off), set(m.P2_off)
 
     dp_boost = value(m.delta_p_boost) if hasattr(m, "delta_p_boost") else 50.0
+    dtheta_boost = value(m.delta_theta_boost) if hasattr(m, "delta_theta_boost") else 10.0
 
     records = []
 
@@ -186,7 +187,7 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
         # Pressures at installation year (use the actual model values)
         pi_init = pi_high = pi_final = pi_lowest = None
         theta_init = theta_pmax_pt = theta_final = theta_lowest = None
-        actual_dp_boost = None
+        actual_dp_boost = actual_dtheta_boost = None
         if installed and year != "":
             t_match = _t_from_year(m, year)
             if t_match is not None:
@@ -195,12 +196,13 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
                 theta_init = value(m.theta_orig[p, t_match, w])
                 theta_final = value(m.theta_dest[p, t_match, w])
 
-                # Actual pressure gain delivered by the installed booster(s) (all-or-nothing)
+                # Actual pressure/temperature gain delivered by the installed booster(s) (all-or-nothing)
                 if is_on:
                     nboost_frac = value(_brep_on1(m, p, t_match, w)) + value(_brep_on2(m, p, t_match, w))
                 else:
                     nboost_frac = value(_brep_off(m, p, t_match, w))
                 actual_dp_boost = dp_boost * nboost_frac
+                actual_dtheta_boost = dtheta_boost * nboost_frac
 
                 # Compute an approximate "high point" (critical minimum-pressure point) pressure,
                 # from the simulated (diameter, U-value) drop Pi_pmax (only meaningful for onshore)
@@ -290,6 +292,7 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
             "U-value [W/m^2/K]": u_selected if (is_on and installed) else None,
             "Insulation cost [M€]": insulation_cost if installed else None,
             "Booster delta pressure [bar]": actual_dp_boost if installed else None,
+            "Booster delta temperature [°C]": actual_dtheta_boost if installed else None,
         }
         rec.update(flow_cols)
         records.append(rec)
