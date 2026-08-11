@@ -2261,7 +2261,7 @@ def build_input_dict(
         "M_flow": 150.0, "M_press": 250.0, "M_eur": 1500.0,
 
         # Temperature constants (mirrors the pressure constants above)
-        "theta_emit": 45.0, "theta_min": 32.0, "delta_theta_boost": 10.0, "M_theta": 100.0,
+        "theta_emit": 45.0, "theta_min": 32.0, "delta_theta_boost": 10.0, "M_theta": 75.0,
 
         # Targets
         "seq_target": seq_target, "util_target": util_target,
