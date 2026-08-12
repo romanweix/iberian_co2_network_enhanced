@@ -1089,7 +1089,7 @@ dP_elev drop parameters.
 
 """
 
-U_VALUES = [2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+U_VALUES = [0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
 # Forced to [2.0] only to run a "no insulation" scenario: the solver can no longer choose
 # u=0.43 for any onshore pipeline/diameter, while every pressure/temperature constraint in
 # developed_model.py is untouched (they all iterate generically over m.U). Restore
