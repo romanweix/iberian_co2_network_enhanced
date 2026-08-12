@@ -487,13 +487,13 @@ COST_PER_INCH_EUR = 40 # in €/m
 cost_per_inch = COST_PER_INCH_EUR * 1e3 / 1e6 # in M€/km
 
 # Surcharge on COST_PER_INCH_EUR for insulated onshore pipelines, in %
-ONSHORE_INSULATION_SURCHARGE_PCT = 80 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
+ONSHORE_INSULATION_SURCHARGE_PCT = 20 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
 
 # complete set of diameters - 39 possible options
 # diameter_inch_str = [
 #     '1', '1 1/4', '1 1/2', '2', '2 1/2', '3', '3 1/2', '4', '5', '6', '8','10',
 #     '12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32', '34', '36',
-#     '38', '40', '42', '44', '46', '48', '50', '52', '54', '56', '58', '60', '62', '64'
+#     '38', '40', '42', '44', '46', '48', '50', '52', '54', '56', '58', '60', '‚62', '64'
 # ]
 
 # selected set of diameters - 10 possible options
@@ -1089,7 +1089,7 @@ dP_elev drop parameters.
 
 """
 
-U_VALUES = [0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+U_VALUES = [2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
 # Forced to [2.0] only to run a "no insulation" scenario: the solver can no longer choose
 # u=0.43 for any onshore pipeline/diameter, while every pressure/temperature constraint in
 # developed_model.py is untouched (they all iterate generically over m.U). Restore
@@ -1132,7 +1132,7 @@ Pi_theta = {
 
 # Temperature drops (same conversion logic as the Pi_* pressure drops above), using the
 # simulation's fixed origin temperature SIM_T_START_C = 40°C = theta_emit.
-SIM_T_START_C = 40.0
+SIM_T_START_C = 45.0
 
 # Temperature drop from origin to the pipe end (already a drop in the simulation output)
 Theta_dest = {

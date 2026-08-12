@@ -207,7 +207,7 @@ for idx, row in df.iterrows():
 
     # 3. Stoffwerte & Startbedingungen
     p_start = 150e5     # 150 bar
-    t_start = 40        # 40 °C
+    t_start = 45        # 45 °C
     u_values = [0.43, 2.0] 
 
     epsilon = 4.5e-5  # Roughness of the pipe in meters (for carbon steel)
@@ -332,7 +332,7 @@ src.close()
 
 import pandas as pd
 
-file_path = "sim_pipeline_candidates.xlsx"
+file_path = "sim_pipeline_candidates_45degC.xlsx"
 
 # deine berechneten Ergebnisse
 df_results = pd.DataFrame(cricital_points)
