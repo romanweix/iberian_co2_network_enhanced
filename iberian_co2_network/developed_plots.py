@@ -260,8 +260,18 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
         else:
             geom_draw = geom
 
-        segs, cols, booster_xy, booster_dir = _pipe_segments_with_gradient(
-            geom_draw, pi_init, p_high, pi_final, L, Lh
+        # Temperature endpoints (onshore only, where the simulated temperature
+        # drops actually apply) -- computed up front so the booster location
+        # below can be shared between the pressure and temperature profiles.
+        theta_init = theta_crit = theta_final = None
+        if is_on and diam_selected is not None and u_selected is not None:
+            theta_init = pyo.value(m.theta_orig[p, t_match, w])
+            theta_final = pyo.value(m.theta_dest[p, t_match, w])
+            theta_crit = theta_init - DATA["Theta_pmax"][(p, diam_selected, u_selected)]
+
+        segs, cols, temp_segs, temp_cols, booster_xy, booster_dir = _pipe_segments_with_gradient(
+            geom_draw, pi_init, p_high, pi_final, L, Lh,
+            theta_init=theta_init, theta_crit=theta_crit, theta_final=theta_final,
         )
 
         # Highlight insulated onshore pipelines with a yellow outline behind the pressure-gradient line
@@ -270,13 +280,8 @@ def add_pipes(ax, DATA, model, year=2050, w: str="base_utilization"):
 
         ax.add_collection(LineCollection(segs, colors=cols, linewidths=3, zorder=4))
 
-        # Thin temperature line offset next to the pressure line (onshore only, where
-        # the simulated temperature drops actually apply) so the map doesn't get overloaded
-        if is_on and diam_selected is not None and u_selected is not None:
-            theta_init = pyo.value(m.theta_orig[p, t_match, w])
-            theta_final = pyo.value(m.theta_dest[p, t_match, w])
-            theta_crit = theta_init - DATA["Theta_pmax"][(p, diam_selected, u_selected)]
-            temp_segs, temp_cols = _pipe_segments_temp(geom_draw, theta_init, theta_crit, theta_final, L, Lh)
+        # Thin temperature line offset next to the pressure line so the map doesn't get overloaded
+        if temp_segs is not None:
             temp_segs = _offset_segments(temp_segs, offset=0.03)
             ax.add_collection(LineCollection(temp_segs, colors=temp_cols, linewidths=1.2, zorder=4.1))
 
@@ -472,82 +477,97 @@ def _offset_linestring(geom, offset):
         new_coords.append((x + nx * offset, y + ny * offset))
     return LineString(new_coords)
 
-def _pipe_segments_temp(geom, theta_init, theta_crit, theta_final, L, Lh):
-    """Same two-piece linear profile as _pipe_segments_with_gradient, but for
-    temperature and without booster handling (kept simple to avoid cluttering
-    the map with a second set of booster markers)."""
-    N = 200
-    total_len_deg = geom.length
-    frac_crit = 0.0 if L <= 0 else np.clip(Lh / max(L, 1e-9), 0.0, 1.0)
-    dists = np.linspace(0, total_len_deg, N + 1)
-    points = [geom.interpolate(d) for d in dists]
-
-    theta_vals = []
-    for f in (dists / total_len_deg if total_len_deg > 0 else np.linspace(0, 1, N + 1)):
+def _two_piece_profile(v_init, v_crit, v_final, fracs, frac_crit):
+    """Two-piece linear profile (init -> critical point -> final) sampled at
+    the given fractions along the pipe, shared by the pressure and
+    temperature curves below so they use identical sampling and can be
+    compared point-by-point."""
+    vals = []
+    for f in fracs:
         if f <= frac_crit:
-            th = theta_init + (theta_crit - theta_init) * (0 if frac_crit == 0 else (f / frac_crit))
+            v = v_init + (v_crit - v_init) * (0 if frac_crit == 0 else (f / frac_crit))
         else:
             denom = (1 - frac_crit) if (1 - frac_crit) > 0 else 1.0
-            th = theta_crit + (theta_final - theta_crit) * ((f - frac_crit) / denom)
-        theta_vals.append(th)
-
-    segs, cols = [], []
-    for i in range(N):
-        x0, y0 = points[i].x, points[i].y
-        x1, y1 = points[i + 1].x, points[i + 1].y
-        segs.append([[x0, y0], [x1, y1]])
-        cols.append(_temperature_color((theta_vals[i] + theta_vals[i + 1]) / 2))
-    return segs, cols
+            v = v_crit + (v_final - v_crit) * ((f - frac_crit) / denom)
+        vals.append(v)
+    return vals
 
 def _pipe_segments_with_gradient(geom, p_init, p_high, p_final, L, Lh,
-                                 boost_delta=50, thresh=100):
+                                 theta_init=None, theta_crit=None, theta_final=None,
+                                 boost_delta_p=50, thresh_p=100,
+                                 boost_delta_theta=10, thresh_theta=32):
     """
-    • geom   -> pipeline LineString
-    • p_init / p_high / p_final -> pressures (bar)
-    • booster_xy = (x, y) of the first segment where pressure drops <= thresh, or None
-    • booster_dir indicates the booster orientation, or None
-    • Lh     -> distance [km] from start to the highest point
-    Returns a list of segments and a list of colors per segment.
+    Builds the pressure-gradient segments (always) and, if theta_init is
+    given, the temperature-gradient segments too (onshore only) -- sharing a
+    single booster location: the first point along the pipe where EITHER the
+    pressure profile drops below thresh_p OR the temperature profile drops
+    below thresh_theta, whichever occurs first. That is also where both
+    curves get their boost bump applied (+boost_delta_p / +boost_delta_theta),
+    so a booster installed purely for a temperature reason is no longer
+    invisible in the pressure-only view and vice versa.
+
+    Falls back to the pipe's highest-point location (no bump applied) if
+    neither threshold is ever crossed in this simplified two-piece profile --
+    e.g. when p_final/theta_final already reflect a solved-model boost
+    applied upstream of this interpolation.
+
+    Returns: press_segs, press_cols, temp_segs, temp_cols, booster_xy, booster_dir
+    (temp_segs/temp_cols are None when theta_init is None, i.e. offshore pipes).
     """
     N = 200                                   # ~100 per segment
     total_len_deg = geom.length               # length in degrees (for sampling)
     frac_high = 0.0 if L <= 0 else np.clip(Lh / max(L, 1e-9), 0.0, 1.0)
 
-    # Equally spaced points
     dists = np.linspace(0, total_len_deg, N + 1)
     points = [geom.interpolate(d) for d in dists]
+    fracs = dists / total_len_deg if total_len_deg > 0 else np.linspace(0, 1, N + 1)
 
-    # Pressure along the line (two-piece profile)
-    p_raw = []
-    for f in (dists / total_len_deg if total_len_deg > 0 else np.linspace(0, 1, N+1)):
-        if f <= frac_high:
-            p = p_init + (p_high - p_init) * (0 if frac_high == 0 else (f / frac_high))
-        else:
-            denom = (1 - frac_high) if (1 - frac_high) > 0 else 1.0
-            p = p_high + (p_final - p_high) * ((f - frac_high) / denom)
-        p_raw.append(p)
+    p_raw = _two_piece_profile(p_init, p_high, p_final, fracs, frac_high)
+    theta_raw = (
+        _two_piece_profile(theta_init, theta_crit, theta_final, fracs, frac_high)
+        if theta_init is not None else None
+    )
 
-    # Booster: +50 bar from the point where it drops below thresh
-    booster_xy = None
-    booster_dir = None
-    p_vals = p_raw.copy()
-    for i in range(len(p_raw) - 1):
-        if booster_xy is None and p_raw[i] >= thresh > p_raw[i+1]:
-            booster_xy = ((points[i].x + points[i+1].x)/2,
-                          (points[i].y + points[i+1].y)/2)
-            booster_dir = (points[i+1].x - points[i].x,
-                           points[i+1].y - points[i].y)
-            p_vals[i+1:] = [p + boost_delta for p in p_vals[i+1:]]
+    # First point (in path order) where either curve crosses its threshold
+    i_boost = None
+    for i in range(N):
+        p_cross = p_raw[i] >= thresh_p > p_raw[i + 1]
+        t_cross = theta_raw is not None and theta_raw[i] >= thresh_theta > theta_raw[i + 1]
+        if p_cross or t_cross:
+            i_boost = i
             break
 
-    segs, cols = [], []
+    p_vals = p_raw.copy()
+    theta_vals = theta_raw.copy() if theta_raw is not None else None
+
+    if i_boost is not None:
+        p_vals[i_boost + 1:] = [v + boost_delta_p for v in p_vals[i_boost + 1:]]
+        if theta_vals is not None:
+            theta_vals[i_boost + 1:] = [v + boost_delta_theta for v in theta_vals[i_boost + 1:]]
+    else:
+        # Fallback: no threshold crossing in either simplified profile, but the
+        # model may still have built a booster here (see add_pipes' n_boost
+        # check) -- give the caller a point to draw the icon at, without
+        # fabricating a bump location for either curve.
+        i_boost = min(int(round(frac_high * N)), N - 1)
+
+    booster_xy = ((points[i_boost].x + points[i_boost + 1].x) / 2,
+                  (points[i_boost].y + points[i_boost + 1].y) / 2)
+    booster_dir = (points[i_boost + 1].x - points[i_boost].x,
+                   points[i_boost + 1].y - points[i_boost].y)
+
+    press_segs, press_cols = [], []
+    temp_segs, temp_cols = ([], []) if theta_vals is not None else (None, None)
     for i in range(N):
         x0, y0 = points[i].x,   points[i].y
         x1, y1 = points[i+1].x, points[i+1].y
-        segs.append([[x0, y0], [x1, y1]])
-        cols.append(_pressure_color((p_vals[i] + p_vals[i+1]) / 2))
+        press_segs.append([[x0, y0], [x1, y1]])
+        press_cols.append(_pressure_color((p_vals[i] + p_vals[i+1]) / 2))
+        if theta_vals is not None:
+            temp_segs.append([[x0, y0], [x1, y1]])
+            temp_cols.append(_temperature_color((theta_vals[i] + theta_vals[i+1]) / 2))
 
-    return segs, cols, booster_xy, booster_dir
+    return press_segs, press_cols, temp_segs, temp_cols, booster_xy, booster_dir
 
 def booster_patch(size=40):
     """

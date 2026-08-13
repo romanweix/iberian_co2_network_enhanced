@@ -227,7 +227,7 @@ for idx, row in df.iterrows():
     colors = plt.cm.plasma(np.linspace(0, 0.8, len(diameters_m)))
 
     # Konsolen-Header formatieren (dp = Druckänderung, dT = Temperaturänderung)
-    header = f"{'U-Wert':<7} | {'D (inch)':<5} | {'x_End':<5} | {'dp_End':<7} | {'dT_End':<7} | {'x_dpmax':<7} | {'dp_max':<7} | {'dT_dpmax':<8} | {'x_Tmin':<6} | {'dp_Tmin':<7} | {'dT_Tmin':<7}"
+    header = f"{'U-Wert':<7} | {'D (inch)':<8} | {'x_end':<5} | {'x_end p':<7} | {'x_end t':<7} | {'x_pmin':<7} | {'p_min p':<7} | {'p_min t':<8} | {'x_tmin':<6} | {'t_min p':<7} | {'t_min t':<7}"
     print(header)
     print("-" * len(header))
 
@@ -316,23 +316,23 @@ for idx, row in df.iterrows():
                 "Longitude [km]": longitude,
                 "U-Wert [W/m^2/K]": u_val,
                 "D [inch]": d_inch,
-                "p_end [bar]": dp_ende_bar,
-                "t_end [°C]": dT_ende_c,
-                "p_max p[bar]": p[idx_p_min] / 1e5,
-                "p_max T [°C]": t_in[idx_p_min],
+                "p_end [bar]": (p[0] / 1e5) - dp_ende_bar,
+                "t_end [°C]": t_in[0] - dT_ende_c,
+                "p_min p[bar]": p[idx_p_min] / 1e5,
+                "p_min T [°C]": t_in[idx_p_min],
                 "t_min p [bar]": p[idx_t_min] / 1e5,
                 "t_min T[°C]": t_in[idx_t_min],
                 "geometry": geometry
             })
 
             # Ausgabe in der Konsole
-            print(f"{u_val:<7} | {d_inch:<5.1f} | {x_end_km:<5.0f} | {dp_ende_bar:<7.1f} | {dT_ende_c:<7.1f} | {x_dpmax_km:<7.1f} | {dp_max_bar:<7.1f} | {dT_dpmax_c:<8.1f} | {x_tmin_km:<6.1f} | {dp_tmin_bar:<7.1f} | {dT_tmin_c:<7.1f}")
+            print(f"{u_val:<7} | {d_inch:<8.1f} | {x_end_km:<5.0f} | {(p[0] / 1e5) - dp_ende_bar:<7.1f} | {t_in[0] - dT_ende_c:<7.1f} | {x_dpmax_km:<7.1f} | {p[idx_p_min] / 1e5:<7.1f} | {t_in[idx_p_min]:<8.1f} | {x_tmin_km:<6.1f} | {p[idx_t_min] / 1e5:<7.1f} | { t_in[idx_t_min]:<7.1f}")
 
 src.close()
 
 import pandas as pd
 
-file_path = "sim_pipeline_candidates_45degC.xlsx"
+file_path = "sim_pipeline_candidates.xlsx"
 
 # deine berechneten Ergebnisse
 df_results = pd.DataFrame(cricital_points)

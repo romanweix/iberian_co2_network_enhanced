@@ -1116,12 +1116,12 @@ _sim_rows_active_u = [
 
 # Pressure drop from origin to the pipe end (already a drop in the simulation output)
 Pi_dest = {
-    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): float(r['p_end [bar]'])
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_P_START_BAR - float(r['p_end [bar]'])
     for r in _sim_rows_active_u
 }
 # Drop from origin to the critical minimum-pressure point along the pipe
 Pi_pmax = {
-    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_P_START_BAR - float(r['p_max p[bar]'])
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_P_START_BAR - float(r['p_min p[bar]'])
     for r in _sim_rows_active_u
 }
 # Drop from origin to the coldest point along the pipe
@@ -1136,12 +1136,12 @@ SIM_T_START_C = 45.0
 
 # Temperature drop from origin to the pipe end (already a drop in the simulation output)
 Theta_dest = {
-    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): float(r['t_end [°C]'])
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_T_START_C- float(r['t_end [°C]'])
     for r in _sim_rows_active_u
 }
 # Temperature drop from origin to the critical minimum-pressure point along the pipe
 Theta_pmax = {
-    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_T_START_C - float(r['p_max T [°C]'])
+    (str(r['Pipe ID']), r['D [inch]'], float(r['U-Wert [W/m^2/K]'])): SIM_T_START_C - float(r['p_min T [°C]'])
     for r in _sim_rows_active_u
 }
 # Temperature drop from origin to the coldest point along the pipe
