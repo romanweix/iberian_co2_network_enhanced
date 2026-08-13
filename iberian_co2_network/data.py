@@ -1077,12 +1077,12 @@ at the critical (minimum-pressure) point, and the pressure at the coldest point.
 replace the analytic Swamee-Jain/elevation-based dP_frict/dP_elev parameters for onshore
 pipelines (offshore pipelines are unaffected and keep the analytic approach).
 
-Expected input: sheet "Pipeline sim. results" in 'data/iberian_co2_network_data.xlsx',
-with columns 'Pipe ID', 'U-Wert [W/m^2/K]', 'D [inch]', 'p_end [bar]', 'p_max p[bar]',
+Expected input: sheet "Pipeline sim. results" in 'data/sim_pipeline_candidates.xlsx',
+with columns 'Pipe ID', 'U-Wert [W/m^2/K]', 'D [inch]', 'p_end [bar]', 'p_min p[bar]',
 't_min p [bar]' (one row per pipeline x diameter x U-value combination, diameters matching
 the existing `diameter_inch_str` set). The simulation itself (romans_playground/
 12_plot_pipeline_elevation_sim.py) was run with a fixed origin pressure of 150 bar
-(SIM_P_START_BAR below); p_max p / t_min p are absolute simulated pressures at the
+(SIM_P_START_BAR below); p_min p / t_min p are absolute simulated pressures at the
 critical points and are converted here into pressure-drop-from-origin values so they can
 be combined with the model's free pi_orig variable exactly like the existing dP_frict/
 dP_elev drop parameters.
