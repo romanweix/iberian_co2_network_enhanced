@@ -487,7 +487,7 @@ COST_PER_INCH_EUR = 40 # in €/m
 cost_per_inch = COST_PER_INCH_EUR * 1e3 / 1e6 # in M€/km
 
 # Surcharge on COST_PER_INCH_EUR for insulated onshore pipelines, in %
-ONSHORE_INSULATION_SURCHARGE_PCT = 60 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
+ONSHORE_INSULATION_SURCHARGE_PCT = 20 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
 
 # complete set of diameters - 39 possible options
 # diameter_inch_str = [
@@ -1089,7 +1089,7 @@ dP_elev drop parameters.
 
 """
 
-U_VALUES = [0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+U_VALUES = [2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
 # Forced to [2.0] only to run a "no insulation" scenario: the solver can no longer choose
 # u=0.43 for any onshore pipeline/diameter, while every pressure/temperature constraint in
 # developed_model.py is untouched (they all iterate generically over m.U). Restore
