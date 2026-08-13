@@ -172,17 +172,29 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
                     break
         diam_inch = _diameter_to_inch(m, diam_selected) if diam_selected is not None else ""
 
-        # Boosters (max over horizon)
+        # Boosters: "Number of boosters" is the max over the ENTIRE horizon (once
+        # built, brep stays 1 -- monotonicity), while "booster_year" is the first
+        # year a booster actually exists. These can differ: a pipeline installed
+        # early may only need its booster later, once the pressure/temperature
+        # constraints actually bind (see onshore_high_point_rule etc. in
+        # developed_model.py). Evaluating the delta pressure/temperature gain at
+        # the pipe's own installation year (as before) then showed 0 for a
+        # pipeline whose booster is real but simply not built yet at that year.
         n_boost = 0
+        _boost_years = []
         if is_on:
             for t in m.T:
-                n_boost = max(
-                    n_boost,
-                    int(round(value(_brep_on1(m, p, t, w)))) + int(round(value(_brep_on2(m, p, t, w))))
-                )
+                nb_t = int(round(value(_brep_on1(m, p, t, w)))) + int(round(value(_brep_on2(m, p, t, w))))
+                n_boost = max(n_boost, nb_t)
+                if nb_t > 0:
+                    _boost_years.append(int(t))
         else:
             for t in m.T:
-                n_boost = max(n_boost, int(round(value(_brep_off(m, p, t, w)))))
+                nb_t = int(round(value(_brep_off(m, p, t, w))))
+                n_boost = max(n_boost, nb_t)
+                if nb_t > 0:
+                    _boost_years.append(int(t))
+        booster_year = min(_boost_years) if _boost_years else None
 
         # Pressures at installation year (use the actual model values)
         pi_init = pi_high = pi_final = pi_lowest = None
@@ -196,13 +208,18 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
                 theta_init = value(m.theta_orig[p, t_match, w])
                 theta_final = value(m.theta_dest[p, t_match, w])
 
-                # Actual pressure/temperature gain delivered by the installed booster(s) (all-or-nothing)
-                if is_on:
-                    nboost_frac = value(_brep_on1(m, p, t_match, w)) + value(_brep_on2(m, p, t_match, w))
-                else:
-                    nboost_frac = value(_brep_off(m, p, t_match, w))
-                actual_dp_boost = dp_boost * nboost_frac
-                actual_dtheta_boost = dtheta_boost * nboost_frac
+                # Actual pressure/temperature gain delivered by the installed booster(s)
+                # (all-or-nothing), evaluated at the booster's own build year -- NOT the
+                # pipe's installation year, since the booster can be built later.
+                if booster_year is not None:
+                    t_boost = _t_from_year(m, booster_year)
+                    if t_boost is not None:
+                        if is_on:
+                            nboost_frac = value(_brep_on1(m, p, t_boost, w)) + value(_brep_on2(m, p, t_boost, w))
+                        else:
+                            nboost_frac = value(_brep_off(m, p, t_boost, w))
+                        actual_dp_boost = dp_boost * nboost_frac
+                        actual_dtheta_boost = dtheta_boost * nboost_frac
 
                 # Compute an approximate "high point" (critical minimum-pressure point) pressure,
                 # from the simulated (diameter, U-value) drop Pi_pmax (only meaningful for onshore)
@@ -286,6 +303,7 @@ def create_pipe_summary(m, w, years_flow=None) -> pd.DataFrame:
             "Final temperature [°C]": theta_final if installed else None,
             "Lowest temperature [°C]": theta_lowest if installed else None,
             "Number of boosters": n_boost if installed else None,
+            "Booster installation year": booster_year if installed else None,
             "Installation Year": year if installed else None,
             "Present Value Cost [M€]": capex if installed else None,
             "Insulated": insulated if is_on else None,
