@@ -211,13 +211,13 @@ for idx, row in df.iterrows():
 
         # 3. Stoffwerte & Startbedingungen
         p_start = 150e5     # 150 bar
-        t_start = 45        # 45 °C
+        t_start = 25        # 25 °C
         u_values = [0.43, 2.0] 
 
         epsilon = 4.5e-5  # Roughness of the pipe in meters (for carbon steel)
 
         # statisches Dichte-Modell Pau
-        temp_static = 308.15  # Temperature in Kelvin (35 °C)
+        temp_static = 298.15 # Temperature in Kelvin (25 °C)
         pressure_static = 125e5  # Pressure in Pa (125 bar)    
 
         # 4. Simulation

@@ -16,6 +16,22 @@ import ast
 
 INTEREST_RATE = 0.08 # interest rate used for all the present value calculations
 
+SCO2_PHASE = False # supercritical phase (True), liquid phase (False)
+
+if SCO2_PHASE == True:
+    SIM_T_START_C = 45.0
+    THETA_EMIT = 45.0
+    THETA_MIN = 32.0
+    SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates.xlsx'
+    CO2_DENSITY = 700  # kg/m³, approximate density of CO₂ at transport conditions
+    FRICTION_TEMP = 308.15 # 35°C
+else:
+    SIM_T_START_C = 25.0
+    THETA_EMIT = 25.0
+    THETA_MIN = 15.0
+    SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates_liquide.xlsx'
+    CO2_DENSITY = 850  # kg/m³, approximate density of CO₂ at transport conditions
+    FRICTION_TEMP = 293.15 # 20°C
 
 """
 
@@ -487,7 +503,7 @@ COST_PER_INCH_EUR = 40 # in €/m
 cost_per_inch = COST_PER_INCH_EUR * 1e3 / 1e6 # in M€/km
 
 # Surcharge on COST_PER_INCH_EUR for insulated onshore pipelines, in %
-ONSHORE_INSULATION_SURCHARGE_PCT = 150 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
+ONSHORE_INSULATION_SURCHARGE_PCT = 20 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
 
 # complete set of diameters - 39 possible options
 # diameter_inch_str = [
@@ -775,7 +791,7 @@ This factor is then applied to all the diameters under study, thus obtaining the
 
 paper_flow_df = pd.read_excel('data/model_parameters.xlsx', sheet_name='Max flows') # Read max flows data from Excel file
 
-co2_density = 700  # kg/m³, approximate density of CO₂ at transport conditions
+co2_density = CO2_DENSITY  # kg/m³, approximate density of CO₂ at transport conditions
 seconds_in_a_year = 365 * 24 * 3600  # s
 
 paper_flow_df['Flow [kg/s]'] = paper_flow_df['Max. annual flow [Mt/year]'] * 1000000000 / seconds_in_a_year
@@ -812,7 +828,7 @@ FRICTION PRESSURE DROP PER KM FOR A D-DIAMETER PIPELINE
 epsilon = 4.5e-5  # Roughness of the pipe in meters (for carbon steel)
 
 fluid = "CO2"  # Fluid type
-temp = 308.15  # Temperature in Kelvin (35 °C)
+temp = FRICTION_TEMP # Temperature in Kelvin (20/35 °C)
 pressure = 125e5  # Pressure in Pa (125 bar)
 
 avg_density = PropsSI('D', 'T', temp, 'P', pressure, fluid)  # Density in kg/m³
@@ -1089,7 +1105,7 @@ dP_elev drop parameters.
 
 """
 
-U_VALUES = [0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
+U_VALUES = [2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
 # Forced to [2.0] only to run a "no insulation" scenario: the solver can no longer choose
 # u=0.43 for any onshore pipeline/diameter, while every pressure/temperature constraint in
 # developed_model.py is untouched (they all iterate generically over m.U). Restore
@@ -1097,7 +1113,7 @@ U_VALUES = [0.43, 2.0]  # W/m^2/K: 0.43 = insulated, 2.0 = not insulated
 SIM_P_START_BAR = 150.0  # fixed origin pressure used by the pipeline simulation
 
 pipe_sim_results_df = pd.read_excel(
-    'data/sim_pipeline_candidates.xlsx', sheet_name='Pipeline sim. results'
+    SIM_PIPELINE_CANDIDATES_XLSX, sheet_name='Pipeline sim. results'
 )
 # D [inch] comes back as a number (e.g. 6.0); normalize to the same string keys as
 # `diameter_inch_str` ('6', '10', ...) instead of a bare .astype(str) which would
@@ -1132,7 +1148,6 @@ Pi_theta = {
 
 # Temperature drops (same conversion logic as the Pi_* pressure drops above), using the
 # simulation's fixed origin temperature SIM_T_START_C = 40°C = theta_emit.
-SIM_T_START_C = 45.0
 
 # Temperature drop from origin to the pipe end (already a drop in the simulation output)
 Theta_dest = {
@@ -2261,7 +2276,7 @@ def build_input_dict(
         "M_flow": 150.0, "M_press": 250.0, "M_eur": 1500.0,
 
         # Temperature constants (mirrors the pressure constants above)
-        "theta_emit": 45.0, "theta_min": 32.0, "delta_theta_boost": 10.0, "M_theta": 75.0,
+        "theta_emit": THETA_EMIT, "theta_min": THETA_MIN, "delta_theta_boost": 10.0, "M_theta": 75.0,
 
         # Targets
         "seq_target": seq_target, "util_target": util_target,
