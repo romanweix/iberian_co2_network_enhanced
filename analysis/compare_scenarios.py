@@ -88,7 +88,9 @@ def _gross_net_cost(cost_series: pd.Series) -> tuple[float, float]:
 
 def _load_pipe_kpis(xlsx_path: Path, util: str) -> dict:
     """Aggregate pipe-level KPIs for one scenario: installed count/length,
-    insulation share (by length), total boosters, total pipe PV cost."""
+    insulation share (by length), total boosters, total pipe PV cost, plus
+    a per-diameter breakdown of how many pipelines and how many booster
+    stations (summed "Number of boosters") were built at each diameter."""
     df = pd.read_excel(xlsx_path, sheet_name=f"{util} - Pipes")
     installed = df[df["Installed"] == 1]
 
@@ -96,7 +98,7 @@ def _load_pipe_kpis(xlsx_path: Path, util: str) -> dict:
     insulated_length = installed.loc[installed["Insulated"] == True, "Longitude [km]"].sum()  # noqa: E712
     insulated_share_pct = 100.0 * insulated_length / total_length if total_length > 0 else 0.0
 
-    return {
+    kpis = {
         "Installed pipes": len(installed),
         "Total pipe length [km]": total_length,
         "Insulated share (by length) [%]": insulated_share_pct,
@@ -105,6 +107,19 @@ def _load_pipe_kpis(xlsx_path: Path, util: str) -> dict:
         "Total pipe PV cost [M€]": installed["Present Value Cost [M€]"].sum(),
         "Total insulation CAPEX [M€]": installed["Insulation cost [M€]"].sum(),
     }
+
+    # Per-diameter breakdown. Diameter [inch] is exported as an int/float,
+    # so sort numerically for a sensible column order (Pipes D=6", D=10", ...).
+    by_diam = installed.groupby("Diameter [inch]")
+    for diam, sub in sorted(by_diam, key=lambda kv: kv[0]):
+        diam_label = f'{int(diam)}"'
+        insulated_sub = sub[sub["Insulated"] == True]  # noqa: E712
+        kpis[f"Pipes D={diam_label}"] = len(sub)
+        kpis[f"Boosters D={diam_label}"] = sub["Number of boosters"].fillna(0).sum()
+        kpis[f"Insulated pipes D={diam_label}"] = len(insulated_sub)
+        kpis[f"Insulated length D={diam_label} [km]"] = insulated_sub["Longitude [km]"].sum()
+
+    return kpis
 
 
 def compare_scenarios(results_dir: Path, util: str = "EUS") -> dict[str, pd.DataFrame]:
@@ -136,6 +151,26 @@ def compare_scenarios(results_dir: Path, util: str = "EUS") -> dict[str, pd.Data
     cost_comparison.index.name = "Concept"
 
     kpi_summary = pd.DataFrame(kpi_rows).sort_values(["Phase", "Insulation surcharge [%]"], na_position="first")
+
+    # Not every scenario builds at every diameter -- a diameter unused in one
+    # scenario but used in another leaves NaN there after pd.DataFrame(kpi_rows)
+    # aligns columns; these are counts/lengths, so 0 is the correct fill,
+    # not NaN (which would misleadingly suggest "unknown" rather than "none").
+    per_diam_prefixes = ("Pipes D=", "Boosters D=", "Insulated pipes D=", "Insulated length D=")
+    per_diam_cols = [c for c in kpi_summary.columns if c.startswith(per_diam_prefixes)]
+    kpi_summary[per_diam_cols] = kpi_summary[per_diam_cols].fillna(0)
+
+    # Columns get appended in whatever order each scenario's diameters were
+    # first seen, so re-sort the per-diameter block numerically by diameter,
+    # grouping the 4 metrics for each diameter together.
+    def _diam_sort_key(col):
+        m = re.search(r'D=(\d+)"', col)
+        diam = int(m.group(1))
+        metric_rank = per_diam_prefixes.index(next(p for p in per_diam_prefixes if col.startswith(p)))
+        return (diam, metric_rank)
+
+    other_cols = [c for c in kpi_summary.columns if c not in per_diam_cols]
+    kpi_summary = kpi_summary[other_cols + sorted(per_diam_cols, key=_diam_sort_key)]
 
     return {"cost_comparison": cost_comparison, "kpi_summary": kpi_summary}
 
