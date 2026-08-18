@@ -772,7 +772,7 @@ This factor is then applied to all the diameters under study, thus obtaining the
 
 paper_flow_df = pd.read_excel('data/model_parameters.xlsx', sheet_name='Max flows') # Read max flows data from Excel file
 
-co2_density = 700  # kg/m³, approximate density of CO₂ at transport conditions
+co2_density = 850  # kg/m³, approximate density of CO₂ at transport conditions
 seconds_in_a_year = 365 * 24 * 3600  # s
 
 paper_flow_df['Flow [kg/s]'] = paper_flow_df['Max. annual flow [Mt/year]'] * 1000000000 / seconds_in_a_year
