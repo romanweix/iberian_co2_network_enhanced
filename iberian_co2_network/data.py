@@ -772,7 +772,7 @@ This factor is then applied to all the diameters under study, thus obtaining the
 
 paper_flow_df = pd.read_excel('data/model_parameters.xlsx', sheet_name='Max flows') # Read max flows data from Excel file
 
-co2_density = 850  # kg/m³, approximate density of CO₂ at transport conditions
+co2_density = 700  # kg/m³, approximate density of CO₂ at transport conditions
 seconds_in_a_year = 365 * 24 * 3600  # s
 
 paper_flow_df['Flow [kg/s]'] = paper_flow_df['Max. annual flow [Mt/year]'] * 1000000000 / seconds_in_a_year
@@ -809,7 +809,7 @@ FRICTION PRESSURE DROP PER KM FOR A D-DIAMETER PIPELINE
 epsilon = 4.5e-5  # Roughness of the pipe in meters (for carbon steel)
 
 fluid = "CO2"  # Fluid type
-temp = 293.15  # Temperature in Kelvin (20 °C)
+temp = 308.15  # Temperature in Kelvin (35 °C)
 pressure = 125e5  # Pressure in Pa (125 bar)
 
 avg_density = PropsSI('D', 'T', temp, 'P', pressure, fluid)  # Density in kg/m³
