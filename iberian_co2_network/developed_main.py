@@ -5,6 +5,7 @@
 # --------------------------------------------------------------
 import sys
 import os, pathlib
+import dill
 from pyomo import environ as pyo
 from pyomo.environ import value
 from pyomo.opt import TerminationCondition as tc
@@ -119,6 +120,16 @@ if term2 != tc.optimal and term2 != tc.feasible:
 
 total_cost = pyo.value(m.SystemCost)
 print(f"\n✅ Solution accepted. Expected cost = {total_cost:,.0f} M€")
+
+# --------------------------------------------------------------
+# 4a. Checkpoint the solved model, so plots (or other post-processing) can
+#     be regenerated later without re-running the solve -- see replot.py.
+# --------------------------------------------------------------
+CHECKPOINT_PATH = "output_developed_model/model_checkpoint.dill"
+os.makedirs(os.path.dirname(CHECKPOINT_PATH), exist_ok=True)
+with open(CHECKPOINT_PATH, "wb") as f:
+    dill.dump({"m": m, "DATA": DATA}, f)
+print(f"✔  Solved model checkpointed to {os.path.abspath(CHECKPOINT_PATH)}")
 
 # --------------------------------------------------------------
 # 5. Post-processing

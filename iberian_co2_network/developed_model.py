@@ -16,7 +16,7 @@ def build_model(data: dict) -> pyo.ConcreteModel:
     m = pyo.ConcreteModel(name="Iberian CCS network")
 
     # Definition of the capture and utilization target and tolerance
-    THETA = 0.1
+    THETA = 1.0
     TOL_P = 0.02  # ±2%
     m.THETA = pyo.Param(initialize=THETA)
 
