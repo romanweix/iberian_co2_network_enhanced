@@ -21,13 +21,20 @@ STEP = 500  # Meter
 
 ACTIVATE_PLOT = True
 
+SHOW_CRITICAL_POINTS = True  # Marker für lokales Druck-/Temperaturminimum
+
+if SHOW_CRITICAL_POINTS == True:
+    TEXT_CRIT_POINTS = "critPnts"
+else:
+    TEXT_CRIT_POINTS = "nocritPnts"
+
 PIPE_ID = "1_a"
 
 cricital_points = []
 
-activate_temp = False
-rho_dynamic = False
-DENSE_ACTIVE = False
+activate_temp = True
+rho_dynamic = True
+DENSE_ACTIVE = True
 
 if activate_temp == True:
     TEXT_ACT_TEMP = "temp"
@@ -201,8 +208,6 @@ for idx, row in df.iterrows():
         import CoolProp.CoolProp as CP
 
         #print(CP.get_global_param_string("version"))
-
-
 
         # 1. Konstanten und Parameter
         step = 500          # Schrittweite in m
@@ -396,21 +401,37 @@ for idx, row in df.iterrows():
             colors = cmap(norm(diameters_inch))
             x_km = x / 1000
 
-            fig = plt.figure(figsize=(8.0, 7.6))
-            gs = fig.add_gridspec(
-                3, 4,
-                height_ratios=[0.85, 1.35, 1.35],
-                width_ratios=[1, 1, 0.30, 0.035],
-                hspace=0.22, wspace=0.06,
-                left=0.09, right=0.85, top=0.92, bottom=0.07,
-            )
+            # Ohne Temperatur entfällt die dritte Zeile komplett (nicht nur
+            # leer gelassen) - Figur, Gridspec und Colorbar-Höhe passen sich an.
+            fig = plt.figure(figsize=(8.0, 7.6 if activate_temp else 5.55))
+            if activate_temp:
+                gs = fig.add_gridspec(
+                    3, 4,
+                    height_ratios=[0.85, 1.35, 1.35],
+                    width_ratios=[1, 1, 0.30, 0.035],
+                    hspace=0.22, wspace=0.06,
+                    left=0.09, right=0.85, top=0.92, bottom=0.07,
+                )
+            else:
+                gs = fig.add_gridspec(
+                    2, 4,
+                    height_ratios=[0.85, 1.35],
+                    width_ratios=[1, 1, 0.30, 0.035],
+                    hspace=0.22, wspace=0.06,
+                    left=0.09, right=0.85, top=0.90, bottom=0.10,
+                )
 
             ax_p = [fig.add_subplot(gs[1, 0])]
             ax_p.append(fig.add_subplot(gs[1, 1], sharey=ax_p[0]))
-            ax_t = [fig.add_subplot(gs[2, 0], sharex=ax_p[0])]
-            ax_t.append(fig.add_subplot(gs[2, 1], sharex=ax_p[0], sharey=ax_t[0]))
             ax_elev = fig.add_subplot(gs[0, 0:2], sharex=ax_p[0])
-            cax = fig.add_subplot(gs[1:, 3])
+
+            if activate_temp:
+                ax_t = [fig.add_subplot(gs[2, 0], sharex=ax_p[0])]
+                ax_t.append(fig.add_subplot(gs[2, 1], sharex=ax_p[0], sharey=ax_t[0]))
+                cax = fig.add_subplot(gs[1:, 3])
+            else:
+                ax_t = [None, None]
+                cax = fig.add_subplot(gs[1, 3])
 
             # --- Höhenprofil: identisch für beide U-Werte, daher nur ein Panel ---
             ax_elev.fill_between(x_km, h, color="#8c6a4a", alpha=0.30, lw=0)
@@ -442,7 +463,8 @@ for idx, row in df.iterrows():
                 axp, axt = ax_p[col], ax_t[col]
 
                 add_elevation_backdrop(axp, show_axis=(col == 1))
-                add_elevation_backdrop(axt, show_axis=(col == 1))
+                if activate_temp:
+                    add_elevation_backdrop(axt, show_axis=(col == 1))
 
                 for i, d_inch in enumerate(diameters_inch):
                     res = results[u_val][d_inch]
@@ -450,11 +472,13 @@ for idx, row in df.iterrows():
                     idx_p_min, idx_t_min = res["idx_p_min"], res["idx_t_min"]
 
                     axp.plot(x_km, p_i / 1e5, color=colors[i])
-                    axp.scatter(x_km[idx_p_min], p_i[idx_p_min] / 1e5, color=colors[i], **marker_kw)
+                    if SHOW_CRITICAL_POINTS:
+                        axp.scatter(x_km[idx_p_min], p_i[idx_p_min] / 1e5, color=colors[i], **marker_kw)
 
                     if activate_temp:
                         axt.plot(x_km, t_i, color=colors[i])
-                        axt.scatter(x_km[idx_t_min], t_i[idx_t_min], color=colors[i], **marker_kw)
+                        if SHOW_CRITICAL_POINTS:
+                            axt.scatter(x_km[idx_t_min], t_i[idx_t_min], color=colors[i], **marker_kw)
 
                 # --- Druck-Panel ---
                 ylim = axp.get_ylim()
@@ -467,43 +491,49 @@ for idx, row in df.iterrows():
                     rf"$U$ = {u_val:g} W m$^{{-2}}$ K$^{{-1}}$ ({insulation_note})",
                     fontweight="bold",
                 )
-                axp.tick_params(labelbottom=False)
 
                 # --- Temperatur-Panel ---
                 if activate_temp:
+                    axp.tick_params(labelbottom=False)
                     axt.plot(x_km, t_ext_profile, color="0.35", ls="--", lw=1.0, label="ambient temperature")
                     axt.axhline(GRAPH_TEMP_MIN_C, color="firebrick", ls="--", lw=1.0, alpha=0.85,
                                 label=TEXT_TEMP_LIMIT)
-                axt.set_xlabel("distance along pipeline [km]")
+                    axt.set_xlabel("distance along pipeline [km]")
+                else:
+                    # Druck-Panel ist ohne Temperatur-Zeile die unterste Reihe
+                    axp.set_xlabel("distance along pipeline [km]")
 
             # --- Legenden (einmal je Zeile, linke Spalte) ---
-            proxy_kw = dict(marker="o", linestyle="", markerfacecolor="0.5",
-                             markeredgecolor="black", markeredgewidth=0.6, markersize=5)
-            crit_p_proxy = plt.Line2D([], [], label="local pressure minimum", **proxy_kw)
-            crit_t_proxy = plt.Line2D([], [], label="local temperature minimum", **proxy_kw)
-
             legend_kw = dict(frameon=True, facecolor="white", framealpha=0.85,
                               edgecolor="none", borderpad=0.4)
 
             h_p, l_p = ax_p[0].get_legend_handles_labels()
-            ax_p[0].legend(h_p + [crit_p_proxy], l_p + [crit_p_proxy.get_label()],
-                           loc="upper left", bbox_to_anchor=(0.01, 0.90), **legend_kw)
+            if SHOW_CRITICAL_POINTS:
+                proxy_kw = dict(marker="o", linestyle="", markerfacecolor="0.5",
+                                 markeredgecolor="black", markeredgewidth=0.6, markersize=5)
+                crit_p_proxy = plt.Line2D([], [], label="local pressure minimum", **proxy_kw)
+                h_p, l_p = h_p + [crit_p_proxy], l_p + [crit_p_proxy.get_label()]
+            ax_p[0].legend(h_p, l_p, loc="upper left", bbox_to_anchor=(0.01, 0.90), **legend_kw)
 
             if activate_temp:
                 h_t, l_t = ax_t[0].get_legend_handles_labels()
-                ax_t[0].legend(h_t + [crit_t_proxy], l_t + [crit_t_proxy.get_label()],
-                               loc="lower left", **legend_kw)
+                if SHOW_CRITICAL_POINTS:
+                    crit_t_proxy = plt.Line2D([], [], label="local temperature minimum", **proxy_kw)
+                    h_t, l_t = h_t + [crit_t_proxy], l_t + [crit_t_proxy.get_label()]
+                ax_t[0].legend(h_t, l_t, loc="lower left", **legend_kw)
 
             ax_p[0].set_ylabel("pressure [bar]")
-            ax_t[0].set_ylabel("temperature [$^{\\circ}$C]")
-            for axr in (ax_p[1], ax_t[1]):
+            tick_hide_axes = [ax_p[1]]
+            panel_axes = [ax_elev, ax_p[0], ax_p[1]]
+            if activate_temp:
+                ax_t[0].set_ylabel("temperature [$^{\\circ}$C]")
+                tick_hide_axes.append(ax_t[1])
+                panel_axes += [ax_t[0], ax_t[1]]
+            for axr in tick_hide_axes:
                 axr.tick_params(labelleft=False)
 
             label_bbox = dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.5)
-            for ax, lbl in zip(
-                (ax_elev, ax_p[0], ax_p[1], ax_t[0], ax_t[1]),
-                ("a", "b", "c", "d", "e"),
-            ):
+            for ax, lbl in zip(panel_axes, "abcde"):
                 ax.text(0.012, 0.94, f"({lbl})", transform=ax.transAxes,
                         fontsize=9, fontweight="bold", va="top", ha="left", bbox=label_bbox)
 
@@ -520,10 +550,10 @@ for idx, row in df.iterrows():
             # --- Export: Übersichtsabbildung + einzelne Panels ---
             outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures")
             os.makedirs(outdir, exist_ok=True)
-            base = f"pipeline_{pipe_id}_profile_{TEXT_PHASE}_{TEXT_ACT_TEMP}_{TEXT_DYN}"
+            base = f"pipeline_{pipe_id}_profile_{TEXT_PHASE}_{TEXT_ACT_TEMP}_{TEXT_DYN}_{TEXT_CRIT_POINTS}"
 
             fig.savefig(os.path.join(outdir, f"{base}.png"), bbox_inches="tight")
-            fig.savefig(os.path.join(outdir, f"{base}.pdf"), bbox_inches="tight")
+            #fig.savefig(os.path.join(outdir, f"{base}.pdf"), bbox_inches="tight")
 
             fig.canvas.draw()
             renderer = fig.canvas.get_renderer()
@@ -536,11 +566,12 @@ for idx, row in df.iterrows():
                 ).transformed(fig.dpi_scale_trans.inverted())
                 bbox = bbox.padded(pad)
                 fig.savefig(os.path.join(outdir, f"{base}_{suffix}.png"), bbox_inches=bbox)
-                fig.savefig(os.path.join(outdir, f"{base}_{suffix}.pdf"), bbox_inches=bbox)
+                #fig.savefig(os.path.join(outdir, f"{base}_{suffix}.pdf"), bbox_inches=bbox)
 
             save_group([ax_elev], "elevation")
             save_group([ax_p[0], ax_p[1], cax], "pressure")
-            save_group([ax_t[0], ax_t[1], cax], "temperature")
+            if activate_temp:
+                save_group([ax_t[0], ax_t[1], cax], "temperature")
 
             print(f"Figures written to: {outdir}")
 
