@@ -25,6 +25,23 @@ PIPE_ID = "1_a"
 
 cricital_points = []
 
+DENSE_ACTIVE = True
+
+if DENSE_ACTIVE == True:
+    MIN_TEMP_C = 15
+    STARTING_TEMP_C = 25
+    STATIC_AVG_TEMP_C = 25
+    TEXT_TEMP_LIMIT = "$T_\mathrm{ice}$(CO$_2$) = 15.0 $^{\circ}$C"
+    GRAPH_TEMP_MIN_C = 15.0
+else: # supercricital co2
+    MIN_TEMP_C = 32
+    STARTING_TEMP_C = 45
+    STATIC_AVG_TEMP_C = 35
+    TEXT_TEMP_LIMIT = "$T_\mathrm{crit}$(CO$_2$) = 31.1 $^{\circ}$C"
+    GRAPH_TEMP_MIN_C = 31.1
+
+
+
 
 # ==========================================================
 # DEM öffnen
@@ -211,32 +228,27 @@ for idx, row in df.iterrows():
 
         # 3. Stoffwerte & Startbedingungen
         p_start = 150e5     # 150 bar
-        t_start = 25        # 25 °C
+        t_start = STARTING_TEMP_C        # 25 °C
         u_values = [0.43, 2.0] 
 
         epsilon = 4.5e-5  # Roughness of the pipe in meters (for carbon steel)
 
         # statisches Dichte-Modell Pau
-        temp_static = 298.15 # Temperature in Kelvin (25 °C)
+        temp_static = 273.15 + STATIC_AVG_TEMP_C # Temperature in Kelvin (25 °C)
         pressure_static = 125e5  # Pressure in Pa (125 bar)    
 
-        # 4. Simulation
-        if activate_temp:
-            subplots_nr = 3
-            height_ratios = [2, 2, 1]
-        else:
-            subplots_nr = 2
-            height_ratios = [2, 1]
-        fig, axes = plt.subplots(subplots_nr, len(u_values), figsize=(18, 14), gridspec_kw={'height_ratios': height_ratios}, sharex=True)
-        colors = plt.cm.plasma(np.linspace(0, 0.8, len(diameters_m)))
-
+        # 4. Simulation: Druck- und Temperaturprofile berechnen
         # Konsolen-Header formatieren (dp = Druckänderung, dT = Temperaturänderung)
         header = f"{'U-Wert':<7} | {'D (inch)':<8} | {'x_end':<5} | {'x_end p':<7} | {'x_end t':<7} | {'x_pmin':<7} | {'p_min p':<7} | {'p_min t':<8} | {'x_tmin':<6} | {'t_min p':<7} | {'t_min t':<7}"
         print(header)
         print("-" * len(header))
 
-        for col, u_val in enumerate(u_values):
-            for i, (d_m, d_inch, m_dot) in enumerate(zip(diameters_m, diameters_inch, m_dot_kg_s)):
+        # results[u_val][d_inch] = {"p": ..., "t": ..., "idx_p_min": ..., "idx_t_min": ...}
+        results = {}
+
+        for u_val in u_values:
+            results[u_val] = {}
+            for d_m, d_inch, m_dot in zip(diameters_m, diameters_inch, m_dot_kg_s):
                 p = np.zeros_like(x)
                 t_in = np.zeros_like(x).astype(np.float64)
                 p[0] = p_start
@@ -249,8 +261,8 @@ for idx, row in df.iterrows():
                         T_kelvin = t_in[j] + 273.15
                         P_pascal = p[j]
 
-                        if T_kelvin < (32 + 273.15):
-                            T_kelvin = 32 + 273.15
+                        if T_kelvin < (MIN_TEMP_C + 273.15):
+                            T_kelvin = MIN_TEMP_C + 273.15
                         
                         if P_pascal < 100e5:
                             P_pascal = 100e5
@@ -297,8 +309,6 @@ for idx, row in df.iterrows():
                     idx_p_min = np.argsort(p)[1]
 
                 x_dpmax_km = x[idx_p_min] / 1000
-                dp_max_bar = (p_start - p[idx_p_min]) / 1e5
-                dT_dpmax_c = t_start - t_in[idx_p_min]
 
                 # 3. Kältester Punkt (Minimum der Temperatur)
                 idx_t_min = np.argmin(t_in)
@@ -312,8 +322,13 @@ for idx, row in df.iterrows():
                     idx_t_min = np.argsort(t_in)[1]
 
                 x_tmin_km = x[idx_t_min] / 1000
-                dp_tmin_bar = (p_start - p[idx_t_min]) / 1e5
-                dT_tmin_c = t_start - t_in[idx_t_min]
+
+                results[u_val][d_inch] = {
+                    "p": p,
+                    "t": t_in,
+                    "idx_p_min": idx_p_min,
+                    "idx_t_min": idx_t_min,
+                }
 
                 cricital_points.append({
                     "Pipe ID": pipe_id,
@@ -332,61 +347,188 @@ for idx, row in df.iterrows():
                 # Ausgabe in der Konsole
                 print(f"{u_val:<7} | {d_inch:<8.1f} | {x_end_km:<5.0f} | {(p[0] / 1e5) - dp_ende_bar:<7.1f} | {t_in[0] - dT_ende_c:<7.1f} | {x_dpmax_km:<7.1f} | {p[idx_p_min] / 1e5:<7.1f} | {t_in[idx_p_min]:<8.1f} | {x_tmin_km:<6.1f} | {p[idx_t_min] / 1e5:<7.1f} | { t_in[idx_t_min]:<7.1f}")
 
-                # Plots (bleiben absolut)
-                axes[0, col].plot(x/1000, p/1e5, color=colors[i], label=f"D={d_inch}inch")
-
-                axes[0, col].scatter(
-                    x[idx_p_min]/1000,
-                    p[idx_p_min]/1e5,
-                    color=colors[i],
-                    edgecolor='black',
-                    s=80,
-                    marker='o',
-                    zorder=5
-                )
-
-                if activate_temp:
-                    axes[1, col].plot(x/1000, t_in, color=colors[i])
-                    
-                    axes[1, col].scatter(
-                        x[idx_t_min]/1000,
-                        t_in[idx_t_min],
-                        color=colors[i],
-                        edgecolor='black',
-                        s=80,
-                        marker='o',
-                        zorder=5
-                    )
-
-            if ACTIVATE_PLOT:   
-                # --- Beschriftung der Spalten ---
-                axes[0, col].set_title(f"\ninsulation U = {u_val} W/m²K", fontsize=14, fontweight='bold')
-
-                # --- Subplot 1: Druck ---
-                axes[0, col].axhline(73.8, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 73.8 bar")
-                axes[0, col].grid(True, alpha=0.2)
-                if col == 0: axes[0, col].set_ylabel("\npressure [bar]")
-                axes[0, col].legend(fontsize='x-small')
-
-                # --- Subplot 2: Temperatur ---
-                if activate_temp:
-                    axes[1, col].plot(x/1000, t_ext_profile, 'k--', alpha=0.4, label="ambient temp")
-                    axes[1, col].axhline(31.1, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 31.1°C")
-                    #axes[1, col].axhline(10.0, color='red', linestyle='-', alpha=0.5, label="ice threshold = 10.0°C")
-                    axes[1, col].grid(True, alpha=0.2)
-                    if col == 0: axes[1, col].set_ylabel("\ntemperature [°C]")
-                    axes[1, col].legend(fontsize='x-small')
-                    height_subplot_row = 2
-                else:
-                    height_subplot_row = 1
-                # --- Subplot 3: Höhe ---
-                axes[height_subplot_row, col].fill_between(x/1000, h, color='brown', alpha=0.2)
-                axes[height_subplot_row, col].grid(True, alpha=0.2)
-                if col == 0: axes[height_subplot_row, col].set_ylabel("\ntopology [m]")
-                axes[height_subplot_row, col].set_xlabel("distance [km]\n\n")
-
+        # ==========================================================
+        # 5. Publikationsreife Darstellung
+        # ==========================================================
         if ACTIVATE_PLOT:
-            plt.tight_layout()
+
+            import os
+            from matplotlib.colors import Normalize
+            from matplotlib.transforms import Bbox
+
+            plt.rcParams.update({
+                "font.family": "serif",
+                "font.serif": ["Times New Roman", "Liberation Serif", "DejaVu Serif"],
+                "mathtext.fontset": "stix",
+                "font.size": 9,
+                "axes.titlesize": 9.5,
+                "axes.labelsize": 9.5,
+                "xtick.labelsize": 8,
+                "ytick.labelsize": 8,
+                "legend.fontsize": 7.5,
+                "axes.linewidth": 0.7,
+                "lines.linewidth": 1.1,
+                "grid.linewidth": 0.5,
+                "grid.alpha": 0.35,
+                "axes.grid": True,
+                "axes.axisbelow": True,
+                "figure.dpi": 130,
+                "savefig.dpi": 300,
+            })
+
+            cmap = plt.cm.viridis
+            norm = Normalize(vmin=diameters_inch.min(), vmax=diameters_inch.max())
+            colors = cmap(norm(diameters_inch))
+            x_km = x / 1000
+
+            fig = plt.figure(figsize=(8.0, 7.6))
+            gs = fig.add_gridspec(
+                3, 4,
+                height_ratios=[0.85, 1.35, 1.35],
+                width_ratios=[1, 1, 0.30, 0.035],
+                hspace=0.22, wspace=0.06,
+                left=0.09, right=0.85, top=0.92, bottom=0.07,
+            )
+
+            ax_p = [fig.add_subplot(gs[1, 0])]
+            ax_p.append(fig.add_subplot(gs[1, 1], sharey=ax_p[0]))
+            ax_t = [fig.add_subplot(gs[2, 0], sharex=ax_p[0])]
+            ax_t.append(fig.add_subplot(gs[2, 1], sharex=ax_p[0], sharey=ax_t[0]))
+            ax_elev = fig.add_subplot(gs[0, 0:2], sharex=ax_p[0])
+            cax = fig.add_subplot(gs[1:, 3])
+
+            # --- Höhenprofil: identisch für beide U-Werte, daher nur ein Panel ---
+            ax_elev.fill_between(x_km, h, color="#8c6a4a", alpha=0.30, lw=0)
+            ax_elev.plot(x_km, h, color="#6b4d30", lw=0.9)
+            ax_elev.set_ylabel("elevation\n[m a.s.l.]")
+            ax_elev.set_ylim(bottom=0)
+            ax_elev.tick_params(labelbottom=False)
+
+            marker_kw = dict(edgecolor="black", linewidth=0.6, s=24, marker="o", zorder=5)
+
+            def add_elevation_backdrop(ax, show_axis):
+                # Topologie transparent hinter den Daten einblenden; rechte y-Achse
+                # dient als Einheitenachse. Skalierung so gewählt, dass das Relief
+                # nur die untere Haelfte des Panels einnimmt und die Kurven nicht überdeckt.
+                ax_e = ax.twinx()
+                ax_e.fill_between(x_km, h, color="#8c6a4a", alpha=0.18, lw=0, zorder=0)
+                ax_e.set_ylim(0, max(h) * 2.3)
+                ax_e.grid(False)
+                ax.set_zorder(ax_e.get_zorder() + 1)
+                ax.patch.set_visible(False)
+                if show_axis:
+                    ax_e.set_ylabel("elevation [m a.s.l.]", color="#6b4d30")
+                    ax_e.tick_params(axis="y", colors="#6b4d30", labelsize=7)
+                else:
+                    ax_e.set_yticks([])
+                return ax_e
+
+            for col, u_val in enumerate(u_values):
+                axp, axt = ax_p[col], ax_t[col]
+
+                add_elevation_backdrop(axp, show_axis=(col == 1))
+                add_elevation_backdrop(axt, show_axis=(col == 1))
+
+                for i, d_inch in enumerate(diameters_inch):
+                    res = results[u_val][d_inch]
+                    p_i, t_i = res["p"], res["t"]
+                    idx_p_min, idx_t_min = res["idx_p_min"], res["idx_t_min"]
+
+                    axp.plot(x_km, p_i / 1e5, color=colors[i])
+                    axp.scatter(x_km[idx_p_min], p_i[idx_p_min] / 1e5, color=colors[i], **marker_kw)
+
+                    if activate_temp:
+                        axt.plot(x_km, t_i, color=colors[i])
+                        axt.scatter(x_km[idx_t_min], t_i[idx_t_min], color=colors[i], **marker_kw)
+
+                # --- Druck-Panel ---
+                ylim = axp.get_ylim()
+                axp.axhspan(ylim[0], 0, color="0.75", alpha=0.55, zorder=0)
+                axp.set_ylim(ylim)
+                axp.axhline(73.8, color="firebrick", ls="--", lw=1.0, alpha=0.85,
+                            label=r"$p_\mathrm{crit}$(CO$_2$) = 73.8 bar")
+                insulation_note = "well insulated" if u_val == min(u_values) else "poorly insulated"
+                axp.set_title(
+                    rf"$U$ = {u_val:g} W m$^{{-2}}$ K$^{{-1}}$ ({insulation_note})",
+                    fontweight="bold",
+                )
+                axp.tick_params(labelbottom=False)
+
+                # --- Temperatur-Panel ---
+                if activate_temp:
+                    axt.plot(x_km, t_ext_profile, color="0.35", ls="--", lw=1.0, label="ambient temperature")
+                    axt.axhline(GRAPH_TEMP_MIN_C, color="firebrick", ls="--", lw=1.0, alpha=0.85,
+                                label=TEXT_TEMP_LIMIT)
+                axt.set_xlabel("distance along pipeline [km]")
+
+            # --- Legenden (einmal je Zeile, linke Spalte) ---
+            proxy_kw = dict(marker="o", linestyle="", markerfacecolor="0.5",
+                             markeredgecolor="black", markeredgewidth=0.6, markersize=5)
+            crit_p_proxy = plt.Line2D([], [], label="local pressure minimum", **proxy_kw)
+            crit_t_proxy = plt.Line2D([], [], label="local temperature minimum", **proxy_kw)
+
+            legend_kw = dict(frameon=True, facecolor="white", framealpha=0.85,
+                              edgecolor="none", borderpad=0.4)
+
+            h_p, l_p = ax_p[0].get_legend_handles_labels()
+            ax_p[0].legend(h_p + [crit_p_proxy], l_p + [crit_p_proxy.get_label()],
+                           loc="upper left", bbox_to_anchor=(0.01, 0.90), **legend_kw)
+
+            if activate_temp:
+                h_t, l_t = ax_t[0].get_legend_handles_labels()
+                ax_t[0].legend(h_t + [crit_t_proxy], l_t + [crit_t_proxy.get_label()],
+                               loc="lower left", **legend_kw)
+
+            ax_p[0].set_ylabel("pressure [bar]")
+            ax_t[0].set_ylabel("temperature [$^{\\circ}$C]")
+            for axr in (ax_p[1], ax_t[1]):
+                axr.tick_params(labelleft=False)
+
+            label_bbox = dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.5)
+            for ax, lbl in zip(
+                (ax_elev, ax_p[0], ax_p[1], ax_t[0], ax_t[1]),
+                ("a", "b", "c", "d", "e"),
+            ):
+                ax.text(0.012, 0.94, f"({lbl})", transform=ax.transAxes,
+                        fontsize=9, fontweight="bold", va="top", ha="left", bbox=label_bbox)
+
+            cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), cax=cax)
+            cbar.set_label("pipeline diameter $D$ [in]")
+            cbar.set_ticks(diameters_inch)
+
+            fig.suptitle(
+                f"Pipeline {pipe_id} — steady-state pressure and temperature profile "
+                f"($L$ = {x_km[-1]:.0f} km, flow reduced to {int(mdot_reduction_pcnt * 100)}% of design capacity)",
+                fontsize=10.5, fontweight="bold",
+            )
+
+            # --- Export: Übersichtsabbildung + einzelne Panels ---
+            outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures")
+            os.makedirs(outdir, exist_ok=True)
+            base = f"pipeline_{pipe_id}_profile"
+
+            fig.savefig(os.path.join(outdir, f"{base}.png"), bbox_inches="tight")
+            fig.savefig(os.path.join(outdir, f"{base}.pdf"), bbox_inches="tight")
+
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+
+            def save_group(axes_group, suffix, pad=0.04):
+                # kleine, feste Randbreite statt relativer Skalierung, damit
+                # benachbarte Panels (z.B. Elevation-Zeile) nicht mit angeschnitten werden
+                bbox = Bbox.union(
+                    [a.get_tightbbox(renderer) for a in axes_group]
+                ).transformed(fig.dpi_scale_trans.inverted())
+                bbox = bbox.padded(pad)
+                fig.savefig(os.path.join(outdir, f"{base}_{suffix}.png"), bbox_inches=bbox)
+                fig.savefig(os.path.join(outdir, f"{base}_{suffix}.pdf"), bbox_inches=bbox)
+
+            save_group([ax_elev], "elevation")
+            save_group([ax_p[0], ax_p[1], cax], "pressure")
+            save_group([ax_t[0], ax_t[1], cax], "temperature")
+
+            print(f"Figures written to: {outdir}")
+
             plt.show()
 
 src.close()
