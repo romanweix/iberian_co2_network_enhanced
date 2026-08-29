@@ -25,7 +25,20 @@ PIPE_ID = "1_a"
 
 cricital_points = []
 
-DENSE_ACTIVE = True
+activate_temp = False
+rho_dynamic = False
+DENSE_ACTIVE = False
+
+if activate_temp == True:
+    TEXT_ACT_TEMP = "temp"
+else:
+    TEXT_ACT_TEMP = "notemp"
+
+if rho_dynamic == True:
+    TEXT_DYN = "dyn"
+else:
+    TEXT_DYN = "notdyn"
+
 
 if DENSE_ACTIVE == True:
     MIN_TEMP_C = 15
@@ -33,12 +46,15 @@ if DENSE_ACTIVE == True:
     STATIC_AVG_TEMP_C = 25
     TEXT_TEMP_LIMIT = "$T_\mathrm{ice}$(CO$_2$) = 15.0 $^{\circ}$C"
     GRAPH_TEMP_MIN_C = 15.0
+    TEXT_PHASE = "dense"
 else: # supercricital co2
     MIN_TEMP_C = 32
     STARTING_TEMP_C = 45
     STATIC_AVG_TEMP_C = 35
     TEXT_TEMP_LIMIT = "$T_\mathrm{crit}$(CO$_2$) = 31.1 $^{\circ}$C"
     GRAPH_TEMP_MIN_C = 31.1
+    TEXT_PHASE = "critical"
+
 
 
 
@@ -186,8 +202,7 @@ for idx, row in df.iterrows():
 
         #print(CP.get_global_param_string("version"))
 
-        activate_temp = True
-        rho_dynamic = True
+
 
         # 1. Konstanten und Parameter
         step = 500          # Schrittweite in m
@@ -505,7 +520,7 @@ for idx, row in df.iterrows():
             # --- Export: Übersichtsabbildung + einzelne Panels ---
             outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures")
             os.makedirs(outdir, exist_ok=True)
-            base = f"pipeline_{pipe_id}_profile"
+            base = f"pipeline_{pipe_id}_profile_{TEXT_PHASE}_{TEXT_ACT_TEMP}_{TEXT_DYN}"
 
             fig.savefig(os.path.join(outdir, f"{base}.png"), bbox_inches="tight")
             fig.savefig(os.path.join(outdir, f"{base}.pdf"), bbox_inches="tight")

@@ -2,10 +2,16 @@ import os
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import cartopy.io.shapereader as shpreader
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import numpy as np
+import pandas as pd
+import rasterio
 import xarray as xr
+from pyproj import Transformer
+from shapely import wkt
+from shapely.geometry import LineString
 
 # ==========================================================
 # Einstellungen
@@ -33,9 +39,16 @@ DATA_GRID_SIZE = 100
 MIN_TEMP = -2.0  # Untere Grenze (vmin)
 MAX_TEMP = 18.0  # Obere Grenze (vmax)
 
-# 3. Kartengitter / Gridlines (Abstand in Grad)
-GRID_SPACING_LON = 2.0  # Alle X° Längengrad
-GRID_SPACING_LAT = 2.0  # Alle Y° Breitengrad
+# 3. Verwaltungsgrenzen (Comunidades Autónomas / Distritos) statt Längen-
+# /Breitengrad-Gitter; auf diese Länder beschränkt (ISO-A3)
+ADMIN_BOUNDARY_COUNTRIES = ["ESP", "PRT"]
+
+# 4. Pipeline-Trassen aus der Kandidatenliste einzeichnen (None = keine)
+EXCEL = "iberian_co2_network_data.xlsx"
+SHEETNAME = "Pipeline candidates"
+PIPE_ID = "1_a"
+DEM = "merged_srtm_roman.tif"  # für Höhenprofil von PIPE_ID
+PROFILE_STEP = 500  # Meter, Schrittweite entlang der Trasse für die Profile
 
 
 # ==========================================================
@@ -128,6 +141,40 @@ print(f"Gespeichert: {OUTPUT_FILE_IBERIA}")
 
 
 # ==========================================================
+# Pipeline-Trassen aus Excel einlesen
+# ==========================================================
+
+# Jede physische Trasse liegt zweimal vor (z.B. "1_a"/"1_b" mit exakt
+# umgekehrter Geometrie, für Hin-/Rückrichtung) - für die Kartendarstellung
+# reicht die "_a"-Variante. "Stage" == "First"/"Second" wird als primäre
+# bzw. sekundäre Leitung interpretiert (durchgezogen bzw. gestrichelt).
+pipeline_line = None
+other_pipelines_a = pd.DataFrame()
+
+if PIPE_ID is not None:
+    print(f"Lese Pipeline-Trassen aus {EXCEL} ...")
+    pipeline_df = pd.read_excel(EXCEL, sheet_name=SHEETNAME)
+    pipelines_a = pipeline_df[
+        pipeline_df["Pipeline identifier"].str.endswith("_a")
+    ]
+
+    pipeline_row = pipeline_df[pipeline_df["Pipeline identifier"] == PIPE_ID]
+    if pipeline_row.empty:
+        print(
+            f"Warnung: Pipeline '{PIPE_ID}' nicht in {EXCEL} (Sheet "
+            f"'{SHEETNAME}') gefunden - es wird keine Trasse eingezeichnet."
+        )
+    else:
+        # Die Koordinaten in der Excel-Tabelle sind WGS84 (wie ax.set_extent
+        # über ccrs.PlateCarree()), daher direkt ohne Umprojektion nutzbar.
+        pipeline_line = wkt.loads(pipeline_row.iloc[0]["geometry"])
+
+    other_pipelines_a = pipelines_a[
+        pipelines_a["Pipeline identifier"] != PIPE_ID
+    ]
+
+
+# ==========================================================
 # Heatmap & Karte erzeugen
 # ==========================================================
 
@@ -187,36 +234,100 @@ heatmap = ax.pcolormesh(
 ax.add_feature(cfeature.LAND, facecolor="#eeeeee", zorder=0, rasterized=True)
 ax.add_feature(cfeature.OCEAN, facecolor="#dbeeff", zorder=0, rasterized=True)
 
-# Küsten- & Landesgrenzen (fein, druckgerecht statt bildschirmtauglich-dick)
+# Verwaltungsgrenzen (Comunidades Autónomas / Distritos) - dünn und grau,
+# damit sie sich klar von der (dickeren, schwarzen) Landesgrenze absetzen.
+# Aus dem Polygon-Datensatz statt admin_1_states_provinces_lines, da
+# Länder-Attribute (ADM0_A3) dort pro Segment oft leer sind (Segmente
+# liegen zwischen zwei Einheiten und tragen nur NAME_L/NAME_R).
+admin1_path = shpreader.natural_earth(
+    resolution="10m", category="cultural", name="admin_1_states_provinces"
+)
+admin1_geoms = [
+    rec.geometry
+    for rec in shpreader.Reader(admin1_path).records()
+    if rec.attributes.get("adm0_a3") in ADMIN_BOUNDARY_COUNTRIES
+]
+ax.add_geometries(
+    admin1_geoms,
+    crs=ccrs.PlateCarree(),
+    facecolor="none",
+    edgecolor="0.45",
+    linewidth=0.4,
+    zorder=1.5,
+    rasterized=True,
+)
+
+# Küsten- & Landesgrenzen (kräftiger als die Verwaltungsgrenzen, damit die
+# Hierarchie Land > Region klar erkennbar bleibt)
 ax.coastlines(resolution="10m", linewidth=0.8, color="black", zorder=2, rasterized=True)
 ax.add_feature(
     cfeature.BORDERS.with_scale("10m"),
-    linewidth=0.6,
+    linewidth=0.9,
     edgecolor="black",
     zorder=2,
     rasterized=True,
 )
 
-# Koordinatennetz auf der Karte
-gl = ax.gridlines(
-    crs=ccrs.PlateCarree(),
-    draw_labels=True,
-    linewidth=0.5,
-    color="gray",
-    alpha=0.5,
-    linestyle="--",
-    zorder=3,
-)
+# Alle übrigen "_a"-Trassen dünn im Hintergrund (durchgezogen = primär/
+# "First", gestrichelt = sekundär/"Second"), PIPE_ID bleibt für den
+# hervorgehobenen Plot direkt danach ausgespart. Knoten (Start-/Endpunkte)
+# aller Kanten werden gesammelt und am Schluss einheitlich eingezeichnet -
+# PIPE_ID bekommt dabei bewusst keine eigene Markeroptik mehr.
+node_coords = set()
+for _, row in other_pipelines_a.iterrows():
+    try:
+        route = wkt.loads(row["geometry"])
+    except Exception:
+        continue
+    route_lons, route_lats = route.xy
+    node_coords.update(route.coords)
+    is_primary = row["Stage"] == "First"
+    ax.plot(
+        route_lons,
+        route_lats,
+        color="0.25",
+        linewidth=0.8,
+        linestyle="-" if is_primary else "--",
+        alpha=0.6,
+        transform=ccrs.PlateCarree(),
+        zorder=3.5,
+    )
 
-# Beschriftung nur links und unten
-gl.top_labels = False
-gl.right_labels = False
-gl.xlabel_style = {"size": 9}
-gl.ylabel_style = {"size": 9}
+# Hervorgehobene Trasse PIPE_ID (weiße Kontur für Lesbarkeit über hellen wie
+# dunklen Heatmap-Bereichen, bleibt Vektorgrafik statt rasterisiert für
+# scharfe Kanten in der PDF-Fassung)
+if pipeline_line is not None:
+    node_coords.update(pipeline_line.coords)
+    pipe_lons, pipe_lats = pipeline_line.xy
+    ax.plot(
+        pipe_lons,
+        pipe_lats,
+        color="black",
+        linewidth=2.0,
+        transform=ccrs.PlateCarree(),
+        zorder=4,
+        path_effects=[pe.withStroke(linewidth=3.5, foreground="white")],
+    )
 
-# Abstände der Gradlinien steuern
-gl.xlocator = mticker.MultipleLocator(GRID_SPACING_LON)
-gl.ylocator = mticker.MultipleLocator(GRID_SPACING_LAT)
+# Knoten des Graphen (Kantenendpunkte) - dezent, aber durch den weißen
+# Rand auf jedem Untergrund gut sichtbar; einheitlich für PIPE_ID wie für
+# alle anderen Trassen, keine Sonderdarstellung.
+if node_coords:
+    node_lons, node_lats = zip(*node_coords)
+    ax.scatter(
+        node_lons,
+        node_lats,
+        s=16,
+        color="0.2",
+        edgecolor="white",
+        linewidth=0.6,
+        transform=ccrs.PlateCarree(),
+        zorder=4.5,
+    )
+
+# Bewusst kein Längen-/Breitengrad-Gitter (siehe ADMIN_BOUNDARY_COUNTRIES
+# oben) - ohne gridlines(draw_labels=True) zeichnet die GeoAxes auch keine
+# Tick-Beschriftung, das Kartenbild bleibt entsprechend unbeschriftet.
 
 
 # ==========================================================
@@ -230,17 +341,22 @@ cbar.set_label("temperature [$^{\\circ}$C]", fontsize=10.5)
 cbar.ax.tick_params(labelsize=9)
 
 # Hinweis: Der Titel wird bewusst über fig.suptitle() statt ax.set_title()
-# gesetzt. Mit aktivierten Gridliner-Labels (draw_labels=True) löst
-# cartopys interne Titel-Positionierung (_update_title_position) auf
-# GeoAxes einen Fehler aus (mit plt.tight_layout(): eine shapely-Exception
-# beim Rendern) bzw. verschiebt den Titel unsichtbar aus der Figur heraus
-# (ohne tight_layout). fig.suptitle() umgeht diese GeoAxes-spezifische
-# Positionierungslogik vollständig. Aus demselben Grund wird auch kein
-# bbox_inches="tight" beim Speichern verwendet (schneidet die Karte auf
-# die Colorbar zusammen) – die Ränder werden stattdessen über
-# fig.subplots_adjust() oben gesetzt.
+# gesetzt. Mit aktivierten Gridliner-Labels (draw_labels=True, mittlerweile
+# entfernt) löste cartopys interne Titel-Positionierung
+# (_update_title_position) auf GeoAxes einen Fehler aus (mit
+# plt.tight_layout(): eine shapely-Exception beim Rendern) bzw. verschob
+# den Titel unsichtbar aus der Figur heraus (ohne tight_layout).
+# fig.suptitle() umgeht diese GeoAxes-spezifische Positionierungslogik
+# vollständig und bleibt daher auch ohne Gridliner die robustere Wahl.
+# Aus demselben Grund wird auch kein bbox_inches="tight" beim Speichern
+# verwendet (schneidet die Karte auf die Colorbar zusammen) – die Ränder
+# werden stattdessen über fig.subplots_adjust() oben gesetzt.
+title = "Mean January 2 m air temperature, Iberian Peninsula (2021–2025)"
+if pipeline_line is not None:
+    title += f", with pipeline {PIPE_ID} route"
+
 fig.suptitle(
-    "Mean January 2 m air temperature, Iberian Peninsula (2021–2025)",
+    title,
     fontsize=12,
     fontweight="bold",
     y=0.96,
@@ -254,6 +370,83 @@ figure_path = os.path.join(FIGURE_DIR, FIGURE_BASENAME)
 plt.savefig(f"{figure_path}.png", dpi=300)
 plt.savefig(f"{figure_path}.pdf")
 
-plt.show()
-
 print(f"Fertig: {FIGURE_FILE_IBERIA}, {figure_path}.png, {figure_path}.pdf")
+
+
+# ==========================================================
+# Höhen- & Temperaturprofil entlang PIPE_ID
+# ==========================================================
+
+if pipeline_line is not None:
+    print(f"Berechne Höhen-/Temperaturprofil für '{PIPE_ID}' ...")
+
+    dem_src = rasterio.open(DEM)
+    to_dem_crs = Transformer.from_crs("EPSG:4326", dem_src.crs, always_xy=True)
+    to_wgs84 = Transformer.from_crs(dem_src.crs, "EPSG:4326", always_xy=True)
+
+    # Für gleichmäßige Schrittweite in Metern wird die Trasse in das
+    # (metrische) DEM-Koordinatensystem projiziert, entlang derer
+    # interpoliert und je Punkt zurück nach WGS84 transformiert (für die
+    # Temperatur, die auf einem Lat/Lon-Gitter vorliegt).
+    coords_dem = [to_dem_crs.transform(x, y) for x, y in pipeline_line.coords]
+    line_dem = LineString(coords_dem)
+    length_m = line_dem.length
+
+    prof_distances_m = np.arange(0, length_m + PROFILE_STEP, PROFILE_STEP)
+    prof_elevations = []
+    prof_temperatures = []
+
+    for d in prof_distances_m:
+        point = line_dem.interpolate(d)
+
+        elevation = next(dem_src.sample([(point.x, point.y)]))[0]
+        prof_elevations.append(float(elevation))
+
+        lon, lat = to_wgs84.transform(point.x, point.y)
+        T = temp_grid.interp({lat_name: lat, lon_name: lon}, method="linear")
+        prof_temperatures.append(float(T.values))
+
+    dem_src.close()
+
+    prof_distances_km = prof_distances_m / 1000
+    profile_base = os.path.join(FIGURE_DIR, f"pipeline_{PIPE_ID}")
+
+    # --- Höhenprofil (Topologie) ---
+    fig_topo, ax_topo = plt.subplots(figsize=(7.5, 3.2))
+    ax_topo.fill_between(prof_distances_km, prof_elevations, color="#8c6a4a", alpha=0.30, lw=0)
+    ax_topo.plot(prof_distances_km, prof_elevations, color="#6b4d30", lw=1.1)
+    ax_topo.set_xlim(prof_distances_km[0], prof_distances_km[-1])
+    ax_topo.set_ylim(bottom=0)
+    ax_topo.set_xlabel("distance along pipeline [km]")
+    ax_topo.set_ylabel("elevation [m a.s.l.]")
+    ax_topo.grid(True, alpha=0.3)
+    ax_topo.set_title(
+        f"Pipeline {PIPE_ID} — topology profile", fontsize=12, fontweight="bold"
+    )
+    fig_topo.tight_layout()
+    fig_topo.savefig(f"{profile_base}_topology_profile.png", dpi=300)
+    fig_topo.savefig(f"{profile_base}_topology_profile.pdf")
+
+    # --- Temperaturprofil ---
+    fig_temp, ax_temp = plt.subplots(figsize=(7.5, 3.2))
+    ax_temp.plot(prof_distances_km, prof_temperatures, color="firebrick", lw=1.3)
+    ax_temp.axhline(0, color="0.5", lw=0.8, ls="--")
+    ax_temp.set_xlim(prof_distances_km[0], prof_distances_km[-1])
+    ax_temp.set_xlabel("distance along pipeline [km]")
+    ax_temp.set_ylabel("temperature [$^{\\circ}$C]")
+    ax_temp.grid(True, alpha=0.3)
+    ax_temp.set_title(
+        f"Pipeline {PIPE_ID} — mean January ambient temperature profile",
+        fontsize=12,
+        fontweight="bold",
+    )
+    fig_temp.tight_layout()
+    fig_temp.savefig(f"{profile_base}_temperature_profile.png", dpi=300)
+    fig_temp.savefig(f"{profile_base}_temperature_profile.pdf")
+
+    print(
+        f"Fertig: {profile_base}_topology_profile.png/.pdf, "
+        f"{profile_base}_temperature_profile.png/.pdf"
+    )
+
+plt.show()
