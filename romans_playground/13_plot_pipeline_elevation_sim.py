@@ -21,20 +21,20 @@ STEP = 500  # Meter
 
 ACTIVATE_PLOT = True
 
-SHOW_CRITICAL_POINTS = True  # Marker für lokales Druck-/Temperaturminimum
+SHOW_CRITICAL_POINTS = False  # Marker für lokales Druck-/Temperaturminimum
 
 if SHOW_CRITICAL_POINTS == True:
     TEXT_CRIT_POINTS = "critPnts"
 else:
     TEXT_CRIT_POINTS = "nocritPnts"
 
-PIPE_ID = "1_a"
+PIPE_ID = "5_a"
 
 cricital_points = []
 
 activate_temp = True
-rho_dynamic = True
-DENSE_ACTIVE = True
+rho_dynamic = False
+DENSE_ACTIVE = False
 
 if activate_temp == True:
     TEXT_ACT_TEMP = "temp"

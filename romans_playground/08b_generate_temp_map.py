@@ -5,6 +5,7 @@ import cartopy.feature as cfeature
 import cartopy.io.shapereader as shpreader
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
 import numpy as np
 import pandas as pd
 import rasterio
@@ -46,7 +47,7 @@ ADMIN_BOUNDARY_COUNTRIES = ["ESP", "PRT"]
 # 4. Pipeline-Trassen aus der Kandidatenliste einzeichnen (None = keine)
 EXCEL = "iberian_co2_network_data.xlsx"
 SHEETNAME = "Pipeline candidates"
-PIPE_ID = "1_a"
+PIPE_ID = "a1_a"
 DEM = "merged_srtm_roman.tif"  # für Höhenprofil von PIPE_ID
 PROFILE_STEP = 500  # Meter, Schrittweite entlang der Trasse für die Profile
 
@@ -308,6 +309,23 @@ if pipeline_line is not None:
         zorder=4,
         path_effects=[pe.withStroke(linewidth=3.5, foreground="white")],
     )
+
+    # Richtungspfeil (Fließrichtung "_a") auf halber Streckenlänge; feste
+    # Bildschirmgröße über mutation_scale statt Datenkoordinaten, damit der
+    # Pfeilkopf unabhängig vom Kartenmaßstab gut erkennbar bleibt.
+    arrow_tail = pipeline_line.interpolate(0.46, normalized=True)
+    arrow_head = pipeline_line.interpolate(0.54, normalized=True)
+    ax.add_patch(FancyArrowPatch(
+        (arrow_tail.x, arrow_tail.y),
+        (arrow_head.x, arrow_head.y),
+        transform=ccrs.PlateCarree(),
+        arrowstyle="-|>",
+        mutation_scale=12,
+        color="black",
+        linewidth=1.5,
+        zorder=5,
+        path_effects=[pe.withStroke(linewidth=3, foreground="white")],
+    ))
 
 # Knoten des Graphen (Kantenendpunkte) - dezent, aber durch den weißen
 # Rand auf jedem Untergrund gut sichtbar; einheitlich für PIPE_ID wie für
