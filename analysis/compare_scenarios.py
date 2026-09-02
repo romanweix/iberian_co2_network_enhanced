@@ -92,6 +92,13 @@ def _load_pipe_kpis(xlsx_path: Path, util: str) -> dict:
     a per-diameter breakdown of how many pipelines and how many booster
     stations (summed "Number of boosters") were built at each diameter."""
     df = pd.read_excel(xlsx_path, sheet_name=f"{util} - Pipes")
+    # A few older/benchmark runs (bm_sco2, bm_dense_2) predate the
+    # insulation feature and don't carry these columns at all -- treat
+    # every pipe there as uninsulated rather than failing.
+    if "Insulated" not in df.columns:
+        df["Insulated"] = False
+    if "Insulation cost [M€]" not in df.columns:
+        df["Insulation cost [M€]"] = 0.0
     installed = df[df["Installed"] == 1]
 
     total_length = installed["Longitude [km]"].sum()
