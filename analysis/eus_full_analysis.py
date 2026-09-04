@@ -7,8 +7,10 @@
 # a condensed cost-category view (overall, and vs. each phase's benchmark
 # run), the network build-out timeline, an installed-diameter distribution
 # pivot, cost-efficiency metrics (EUR per km built, EUR per tonne of CO2
-# stored), why boosters were needed (pressure vs. temperature), and the
-# insulation shell volume implied by each scenario's insulated pipes.
+# stored), why boosters were needed (pressure vs. temperature), the total
+# pipeline volume (pipe itself, no insulation) implied by each scenario's
+# installed pipes, and the insulation shell volume implied by each
+# scenario's insulated pipes.
 #
 # Usage (from the repo root):
 #   python -m analysis.eus_full_analysis
@@ -351,6 +353,52 @@ def _insulation_shell_volume_m3(diameter_inch: pd.Series, length_km: pd.Series) 
     return math.pi * ((r + t) ** 2 - r ** 2) * length_m
 
 
+def _pipe_volume_m3(diameter_inch: pd.Series, length_km: pd.Series) -> pd.Series:
+    """Enclosed volume of the pipe itself, without any insulation shell:
+    V = pi * r^2 * L, with r the pipe's nominal radius (from its nominal
+    diameter -- no wall-thickness data is modeled) and L its installed
+    length."""
+    r = (diameter_inch * INCH_TO_M) / 2.0
+    length_m = length_km * 1000.0
+    return math.pi * (r ** 2) * length_m
+
+
+def build_pipe_volume() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Per-scenario pipeline volume (m^3): the pipe's own enclosed volume
+    from its nominal diameter and installed length, independent of any
+    insulation shell, plus a diameter x scenario breakdown. Unlike
+    build_insulation_volume(), this covers every installed pipe in every
+    scenario -- diameter and length are always exported, even for the
+    pre-insulation-feature benchmark runs."""
+    summary_rows = []
+    volume_by_diam = {}
+
+    for f, scenario_key, phase_label, surcharge_pct in labeled_scenarios():
+        df = pd.read_excel(f, sheet_name=f"{UTIL} - Pipes")
+        installed = df[df["Installed"] == 1].copy()
+        installed["_volume_m3"] = _pipe_volume_m3(installed["Diameter [inch]"], installed["Longitude [km]"])
+
+        summary_rows.append({
+            "Scenario": scenario_key,
+            "Phase": phase_label,
+            "Installed pipes": len(installed),
+            "Total pipe length [km]": installed["Longitude [km]"].sum(),
+            "Total pipe volume [m³]": installed["_volume_m3"].sum(),
+        })
+
+        volume_by_diam[scenario_key] = installed.groupby("Diameter [inch]")["_volume_m3"].sum()
+
+    summary_df = pd.DataFrame(summary_rows)
+
+    diam_matrix = pd.DataFrame(volume_by_diam).fillna(0.0)
+    diam_matrix.index = [f'{int(d)}"' for d in diam_matrix.index]
+    diam_matrix.index.name = "Diameter"
+    diam_matrix["_sort"] = [int(i.rstrip('"')) for i in diam_matrix.index]
+    diam_matrix = diam_matrix.sort_values("_sort").drop(columns="_sort")
+
+    return summary_df, diam_matrix
+
+
 def build_insulation_volume() -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Per-scenario insulation shell volume (m^3), plus a diameter x
     scenario breakdown for the scenarios where insulation is modeled at
@@ -552,6 +600,14 @@ def main():
         f"Excluded (older schema, no pressure/temperature columns exported): {', '.join(booster_excluded) or 'none'}.",
     ]})
 
+    pipe_volume_summary, pipe_volume_by_diam = build_pipe_volume()
+    pipe_volume_note = pd.DataFrame({"Note": [
+        "Pipeline volume = pi * r^2 * length, r = nominal pipe diameter / 2 (no pipe-wall-thickness "
+        "data is modeled, so the nominal diameter is used as the pipe's inner diameter). This is the "
+        "pipe's own enclosed volume only -- it excludes the insulation shell (see the 'Insulation "
+        "volume' tab) and is reported for every installed pipe in every scenario.",
+    ]})
+
     insulation_summary, insulation_by_diam, insulation_excluded = build_insulation_volume()
     insulation_note = pd.DataFrame({"Note": [
         "Insulation shell volume = pi * ((r + 0.15m)^2 - r^2) * length, r = nominal pipe diameter / 2 "
@@ -595,6 +651,12 @@ def main():
             ("Number of boosted pipes by reason x scenario", booster_count, True),
             ("Total booster count by reason x scenario (sum of 'Number of boosters')", booster_boostcount, True),
             ("Notes", booster_note, False),
+        ])
+
+        pipe_volume_layout = _write_blocks(writer, "Pipe volume", [
+            ("Pipeline volume by scenario (no insulation)", pipe_volume_summary, False),
+            ("Pipeline volume [m³] by diameter x scenario", pipe_volume_by_diam, True),
+            ("Notes", pipe_volume_note, False),
         ])
 
         insulation_layout = _write_blocks(writer, "Insulation volume", [
@@ -651,6 +713,9 @@ def main():
 
     ws = wb["Booster reason"]
     _style_blocks(ws, booster_layout, ws.max_column)
+
+    ws = wb["Pipe volume"]
+    _style_blocks(ws, pipe_volume_layout, ws.max_column)
 
     ws = wb["Insulation volume"]
     _style_blocks(ws, insulation_layout, ws.max_column)
