@@ -8,26 +8,29 @@
 # EUS_full_analysis.xlsx for the underlying tables.
 #
 # Three figures, one scenario axis each (supercritical scenarios on the
-# left, liquid on the right, each group led by its benchmark run, as in
-# plot_booster_vs_insulation.py):
+# left, liquid on the right). The benchmark runs (bm_sco2 / bm_dense_2,
+# which predate the insulation feature) are never plotted here -- every
+# reference below is instead each phase's own uninsulated sweep scenario,
+# SC-U (noins) / LP-U (liq_noins), which -- unlike the benchmark runs --
+# is a genuine point in the insulation-surcharge sweep:
 #   capex_detail_absolute.png  -- two vertically-stacked panels, absolute
 #       M€: (A) onshore pipe CAPEX, stacked into insulation-free + insulation;
 #       (B) booster CAPEX, stacked into initial + additional. Two panels
 #       rather than one dual-axis chart, for the same reason as
 #       plot_booster_vs_insulation.py -- booster CAPEX is ~10x onshore-pipe
 #       CAPEX, so a shared axis would flatten the onshore series.
-#   capex_detail_relative.png -- one panel, % deviation from each scenario's
-#       phase benchmark, grouped by scenario, for the four rows that have a
-#       defined deviation (see note below on the insulation row).
+#   capex_detail_relative.png -- one panel, % deviation from SC-U/LP-U,
+#       grouped by scenario, for the four rows that have a defined
+#       deviation (see note below on the insulation row).
 #   capex_detail_trend.png -- 2x3 small multiples (one cell left empty),
 #       one per CAPEX row, each plotting that row's value AS A LINE against
 #       the insulation surcharge [%] -- an ordered quantity, unlike the
 #       categorical scenario axis used in the other two figures -- with
 #       supercritical and liquid as two separate lines so the two phases'
 #       trends are directly comparable on shared axes. Four panels plot %
-#       deviation from benchmark (same four rows as capex_detail_relative.png);
+#       deviation from SC-U/LP-U (same four rows as capex_detail_relative.png);
 #       the fifth ("CAPEX onshore insulation") plots the absolute M€ value
-#       instead, since its deviation from benchmark is undefined (see
+#       instead, since its deviation from SC-U/LP-U is undefined (see
 #       INSULATION_ROW below).
 #
 # Plus one more figure per CAPEX_DETAIL_ROWS component (5 total,
@@ -37,10 +40,10 @@
 #
 # The "CAPEX onshore insulation" row is a memo-only breakout of the total,
 # not one of the two summed here -- and its own % deviation is undefined
-# for every scenario (both benchmark runs predate the insulation feature,
-# so their insulation CAPEX is 0 -- see build_cost_category_vs_benchmark()'s
-# divide-by-zero guard), so it is left out of the relative chart entirely
-# rather than plotted as a misleading blank/zero bar.
+# for every scenario (SC-U/LP-U have 0 insulation CAPEX by definition --
+# no insulation -- see build_cost_category_vs_benchmark()'s divide-by-zero
+# guard), so it is left out of the relative chart entirely rather than
+# plotted as a misleading blank/zero bar.
 #
 # Usage (from the repo root):
 #   python -m analysis.plot_capex_detail
@@ -57,13 +60,22 @@ from matplotlib.patches import Patch
 from matplotlib.ticker import FuncFormatter
 
 from analysis.eus_full_analysis import (
-    SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK,
-    LIQUID_SCENARIOS, LIQUID_BENCHMARK,
+    SUPERCRITICAL_SCENARIOS, LIQUID_SCENARIOS,
     CAPEX_DETAIL_ROWS,
     build_capex_detail, build_cost_category_vs_benchmark,
 )
 
 OUT_DIR = Path("analysis")
+
+# Reference scenario per phase for every deviation computed in this module:
+# each phase's own uninsulated sweep scenario, not the pre-insulation-feature
+# benchmark run. SUPERCRITICAL_SCENARIOS / LIQUID_SCENARIOS both list their
+# reference first (see eus_full_analysis.py), so the remaining entries are
+# the insulated sweep compared against it.
+SUPERCRITICAL_REFERENCE = SUPERCRITICAL_SCENARIOS[0]  # "noins"
+LIQUID_REFERENCE = LIQUID_SCENARIOS[0]                # "liq_noins"
+SUPERCRITICAL_SWEEP = SUPERCRITICAL_SCENARIOS[1:]     # ins20 .. ins150
+LIQUID_SWEEP = LIQUID_SCENARIOS[1:]                   # liq_ins20 .. liq_ins60
 
 # Categorical palette slots 1/2/3/4 (blue/orange/aqua/yellow) from the
 # validated default order in the dataviz skill's references/palette.md.
@@ -83,24 +95,30 @@ AXIS_COLOR = "#c3c2b7"
 TEXT_MUTED = "#52514e"
 
 
+# Official scenario abbreviations (thesis nomenclature): LP = liquid phase,
+# SC = supercritical; -U = uninsulated (the reference scenario for every
+# deviation in this module), -I<pct> = insulation surcharge. The benchmark
+# runs (bm_sco2 / bm_dense_2) are never plotted here, so they have no entry.
+SCENARIO_ABBR = {
+    "liq_noins": "LP-U", "liq_ins20": "LP-I20", "liq_ins40": "LP-I40", "liq_ins60": "LP-I60",
+    "noins": "SC-U", "ins20": "SC-I20", "ins40": "SC-I40",
+    "ins60": "SC-I60", "ins80": "SC-I80", "ins100": "SC-I100", "ins150": "SC-I150",
+}
+
+
 def _scenario_label(scenario_key: str) -> str:
-    if scenario_key in (SUPERCRITICAL_BENCHMARK, LIQUID_BENCHMARK):
-        return "BM*"
-    if scenario_key.endswith("noins"):
-        return "No ins."
-    m = re.search(r"ins(\d+)$", scenario_key)
-    return f"+{m.group(1)}%" if m else scenario_key
+    return SCENARIO_ABBR.get(scenario_key, scenario_key)
 
 
 def _layout_positions(supercritical_order, liquid_order):
-    """x position per scenario: a wider gap after each group's leading
-    benchmark bar, and a wider gap still between the two phase groups."""
+    """x position per scenario: uniform spacing within each phase group,
+    a wider gap between the two phase groups."""
     positions = {}
     x = 0.0
     for order in (supercritical_order, liquid_order):
-        for i, sk in enumerate(order):
+        for sk in order:
             positions[sk] = x
-            x += 1.7 if i == 0 else 1.0
+            x += 1.0
         x += 0.7
     return positions
 
@@ -115,8 +133,8 @@ def _group_labels(fig, ax, positions, supercritical_order, liquid_order):
 
 
 def plot_capex_detail_absolute(capex_detail, out_dir: Path = OUT_DIR):
-    supercritical_order = [SUPERCRITICAL_BENCHMARK] + SUPERCRITICAL_SCENARIOS
-    liquid_order = [LIQUID_BENCHMARK] + LIQUID_SCENARIOS
+    supercritical_order = SUPERCRITICAL_SCENARIOS
+    liquid_order = LIQUID_SCENARIOS
     positions = _layout_positions(supercritical_order, liquid_order)
     all_scenarios = supercritical_order + liquid_order
 
@@ -181,8 +199,7 @@ def plot_capex_detail_absolute(capex_detail, out_dir: Path = OUT_DIR):
 
     fig.text(
         0.01, 0.015,
-        "* phase benchmark run (bm_sco2 / bm_dense_2), which predates the insulation feature "
-        "(CAPEX onshore insulation = 0 there).\n"
+        "SC-U/LP-U have 0 insulation CAPEX by definition (no insulation).\n"
         "Data: analysis/EUS_full_analysis.xlsx, 'CAPEX detail - supercritical'/'CAPEX detail - liquid' tabs (EUS).",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
     )
@@ -208,23 +225,22 @@ RELATIVE_ROWS = [
 
 def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
     sc_values, sc_pct = build_cost_category_vs_benchmark(
-        capex_detail, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
+        capex_detail, SUPERCRITICAL_SWEEP, SUPERCRITICAL_REFERENCE)
     liq_values, liq_pct = build_cost_category_vs_benchmark(
-        capex_detail, LIQUID_SCENARIOS, LIQUID_BENCHMARK)
+        capex_detail, LIQUID_SWEEP, LIQUID_REFERENCE)
 
+    # sc_pct/liq_pct's columns are [reference] + sweep, i.e. exactly
+    # SUPERCRITICAL_SCENARIOS / LIQUID_SCENARIOS -- the reference scenario's
+    # own column is included and is exactly 0% (compared against itself),
+    # so it needs no special-casing to appear as the chart's zero point.
     pct_by_scenario = {}
     for sk in SUPERCRITICAL_SCENARIOS:
         pct_by_scenario[sk] = sc_pct[sk]
     for sk in LIQUID_SCENARIOS:
         pct_by_scenario[sk] = liq_pct[sk]
-    # Benchmarks themselves are always exactly 0% deviation from themselves;
-    # included on the axis (as a visual zero reference) but not fetched from
-    # sc_pct/liq_pct, which only carry the sweep scenarios' own columns here.
-    pct_by_scenario[SUPERCRITICAL_BENCHMARK] = {row: 0.0 for row, _ in RELATIVE_ROWS}
-    pct_by_scenario[LIQUID_BENCHMARK] = {row: 0.0 for row, _ in RELATIVE_ROWS}
 
-    supercritical_order = [SUPERCRITICAL_BENCHMARK] + SUPERCRITICAL_SCENARIOS
-    liquid_order = [LIQUID_BENCHMARK] + LIQUID_SCENARIOS
+    supercritical_order = SUPERCRITICAL_SCENARIOS
+    liquid_order = LIQUID_SCENARIOS
     positions = _layout_positions(supercritical_order, liquid_order)
     all_scenarios = supercritical_order + liquid_order
 
@@ -245,7 +261,7 @@ def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
             ax.bar(x, v, bar_width * 0.9, color=color, edgecolor="white", linewidth=0.4, zorder=3)
 
     ax.axhline(0, color=AXIS_COLOR, linewidth=1.2, zorder=2)
-    ax.set_ylabel("Deviation from phase benchmark [%]")
+    ax.set_ylabel("Deviation from SC-U / LP-U [%]")
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}%"))
     ax.grid(axis="y", color=GRID_COLOR, linewidth=0.8, zorder=0)
     ax.set_axisbelow(True)
@@ -254,7 +270,7 @@ def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
     ax.spines["left"].set_color(AXIS_COLOR)
     ax.spines["bottom"].set_color(AXIS_COLOR)
 
-    fig.suptitle("CAPEX detail: % deviation from phase benchmark by scenario (EUS)",
+    fig.suptitle("CAPEX detail: % deviation from SC-U / LP-U by scenario (EUS)",
                  fontsize=13, fontweight="bold", y=0.965)
     legend_handles = [Patch(facecolor=color, label=row) for row, color in RELATIVE_ROWS]
     fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.915),
@@ -272,9 +288,9 @@ def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
 
     fig.text(
         0.01, 0.02,
-        "* phase benchmark run (bm_sco2 / bm_dense_2) -- 0% by definition. "
+        "SC-U/LP-U -- 0% by definition (the reference). "
         "'CAPEX onshore insulation' is omitted: its own deviation is undefined for every scenario "
-        "(both benchmarks predate the insulation feature, so their insulation CAPEX is 0) -- see "
+        "(SC-U/LP-U have 0 insulation CAPEX by definition) -- see "
         "the 'CAPEX detail' tabs in EUS_full_analysis.xlsx for that row's absolute values instead.",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
     )
@@ -289,10 +305,8 @@ def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
 
 
 def _surcharge_value(scenario_key: str) -> float:
-    """Insulation surcharge [%] implied by a sweep scenario's key, treating
-    "(liq_)noins" as the sweep's 0% point -- distinct from the phase
-    benchmark run (bm_sco2 / bm_dense_2), which predates the insulation
-    feature entirely and isn't part of this sweep."""
+    """Insulation surcharge [%] implied by a sweep scenario's key; "(liq_)noins"
+    (SC-U / LP-U), this module's reference scenario, is the sweep's 0% point."""
     if scenario_key.endswith("noins"):
         return 0.0
     m = re.search(r"ins(\d+)$", scenario_key)
@@ -302,19 +316,19 @@ def _surcharge_value(scenario_key: str) -> float:
 
 
 # "CAPEX onshore insulation" plotted alongside RELATIVE_ROWS' four %-deviation
-# panels, but as its own absolute-M€ panel rather than a fifth % line: both
-# phase benchmarks predate the insulation feature (insulation CAPEX = 0
-# there), so this row's deviation from benchmark is undefined for every
-# scenario (see build_cost_category_vs_benchmark()'s divide-by-zero guard) --
-# there is no benchmark value to plot a trend of deviation from.
+# panels, but as its own absolute-M€ panel rather than a fifth % line: SC-U/
+# LP-U have 0 insulation CAPEX by definition (no insulation), so this row's
+# deviation from the reference is undefined for every scenario (see
+# build_cost_category_vs_benchmark()'s divide-by-zero guard) -- there is no
+# reference value to plot a trend of deviation from.
 INSULATION_ROW = "CAPEX onshore insulation"
 
 
 def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
     sc_values, sc_pct = build_cost_category_vs_benchmark(
-        capex_detail, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
+        capex_detail, SUPERCRITICAL_SWEEP, SUPERCRITICAL_REFERENCE)
     liq_values, liq_pct = build_cost_category_vs_benchmark(
-        capex_detail, LIQUID_SCENARIOS, LIQUID_BENCHMARK)
+        capex_detail, LIQUID_SWEEP, LIQUID_REFERENCE)
 
     sc_x = [_surcharge_value(sk) for sk in SUPERCRITICAL_SCENARIOS]
     liq_x = [_surcharge_value(sk) for sk in LIQUID_SCENARIOS]
@@ -337,7 +351,7 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
         ax.axhline(0, color=AXIS_COLOR, linewidth=1.0, zorder=2)
         ax.set_title(row, fontsize=9.5, color=TEXT_MUTED, fontweight="bold")
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}%"))
-        ax.set_ylabel("Deviation from\nphase benchmark [%]")
+        ax.set_ylabel("Deviation from\nSC-U / LP-U [%]")
 
     # Insulation panel: absolute M€, not % deviation (see INSULATION_ROW note
     # above) -- same x-axis, its own y-axis/units, clearly labelled so it
@@ -349,7 +363,7 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
     insulation_ax.plot(liq_x, liq_ins_y, marker="o", color=COLOR_LIQUID, linewidth=2,
                         markersize=5, label="Liquid", zorder=3)
     insulation_ax.axhline(0, color=AXIS_COLOR, linewidth=1.0, zorder=2)
-    insulation_ax.set_title(f"{INSULATION_ROW} (absolute, not vs. benchmark†)",
+    insulation_ax.set_title(f"{INSULATION_ROW} (absolute, not vs. SC-U/LP-U†)",
                              fontsize=9.5, color=TEXT_MUTED, fontweight="bold")
     insulation_ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
     insulation_ax.set_ylabel("CAPEX [M€]")
@@ -378,11 +392,10 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
 
     fig.text(
         0.01, 0.02,
-        "0% surcharge = noins / liq_noins (no insulation, but still part of the sweep -- unlike the "
-        "pre-insulation-feature bm_sco2/bm_dense_2 benchmark runs, which define the 0% deviation "
-        "line in the four left/center panels and aren't otherwise part of this trend). Liquid sweep "
-        "stops at +60%. † both benchmark runs predate the insulation feature (insulation CAPEX = 0 "
-        "there), so this row's deviation from benchmark is undefined -- its absolute value is shown instead.",
+        "0% surcharge = SC-U / LP-U, this module's reference scenario (0% deviation by "
+        "definition in the four left/center panels). Liquid sweep stops at +60%. "
+        "† SC-U/LP-U have 0 insulation CAPEX by definition (no insulation), so this row's "
+        "deviation from the reference is undefined -- its absolute value is shown instead.",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
     )
 
@@ -414,9 +427,9 @@ def plot_capex_detail_components(capex_detail, out_dir: Path = OUT_DIR):
     for the reason given at INSULATION_ROW, but included here on its own
     absolute-M€ axis like that trend chart's fifth panel)."""
     sc_values, sc_pct = build_cost_category_vs_benchmark(
-        capex_detail, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
+        capex_detail, SUPERCRITICAL_SWEEP, SUPERCRITICAL_REFERENCE)
     liq_values, liq_pct = build_cost_category_vs_benchmark(
-        capex_detail, LIQUID_SCENARIOS, LIQUID_BENCHMARK)
+        capex_detail, LIQUID_SWEEP, LIQUID_REFERENCE)
 
     sc_x = [_surcharge_value(sk) for sk in SUPERCRITICAL_SCENARIOS]
     liq_x = [_surcharge_value(sk) for sk in LIQUID_SCENARIOS]
@@ -443,10 +456,10 @@ def plot_capex_detail_components(capex_detail, out_dir: Path = OUT_DIR):
         if is_insulation:
             ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
             ax.set_ylabel("CAPEX [M€]")
-            title = f"{row} (absolute, not vs. benchmark†)"
+            title = f"{row} (absolute, not vs. SC-U/LP-U†)"
         else:
             ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}%"))
-            ax.set_ylabel("Deviation from phase benchmark [%]")
+            ax.set_ylabel("Deviation from SC-U / LP-U [%]")
             title = row
 
         ax.set_xlabel("Insulation surcharge [%]")
@@ -462,11 +475,11 @@ def plot_capex_detail_components(capex_detail, out_dir: Path = OUT_DIR):
         ax.legend(loc="best", frameon=False, fontsize=9.5)
 
         footnote = (
-            "0% surcharge = noins / liq_noins (still part of the sweep). Liquid sweep stops at +60%."
+            "0% surcharge = SC-U / LP-U, this figure's reference scenario. Liquid sweep stops at +60%."
             if not is_insulation else
-            "0% surcharge = noins / liq_noins (still part of the sweep). Liquid sweep stops at +60%. "
-            "† both benchmark runs predate the insulation feature (insulation CAPEX = 0 there), so "
-            "this row's deviation from benchmark is undefined -- its absolute value is shown instead."
+            "0% surcharge = SC-U / LP-U, this figure's reference scenario. Liquid sweep stops at +60%. "
+            "† SC-U/LP-U have 0 insulation CAPEX by definition (no insulation), so this row's "
+            "deviation from the reference is undefined -- its absolute value is shown instead."
         )
         fig.text(0.01, 0.02, footnote, fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom")
 
