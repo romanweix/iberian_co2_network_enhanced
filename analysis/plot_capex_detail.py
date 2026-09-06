@@ -7,7 +7,7 @@
 # detail - supercritical" / "CAPEX detail - liquid" tabs in
 # EUS_full_analysis.xlsx for the underlying tables.
 #
-# Two figures, one scenario axis each (supercritical scenarios on the
+# Three figures, one scenario axis each (supercritical scenarios on the
 # left, liquid on the right, each group led by its benchmark run, as in
 # plot_booster_vs_insulation.py):
 #   capex_detail_absolute.png  -- two vertically-stacked panels, absolute
@@ -19,6 +19,13 @@
 #   capex_detail_relative.png -- one panel, % deviation from each scenario's
 #       phase benchmark, grouped by scenario, for the four rows that have a
 #       defined deviation (see note below on the insulation row).
+#   capex_detail_trend.png -- 2x2 small multiples, one per CAPEX row (same
+#       four as capex_detail_relative.png), each plotting that row's %
+#       deviation from benchmark AS A LINE against the insulation surcharge
+#       [%] -- an ordered quantity, unlike the categorical scenario axis
+#       used in the other two figures -- with supercritical and liquid as
+#       two separate lines so the two phases' trends are directly
+#       comparable on shared axes.
 #
 # The "CAPEX onshore insulation" row is a memo-only breakout of the total,
 # not one of the two summed here -- and its own % deviation is undefined
@@ -56,6 +63,13 @@ COLOR_ONSHORE_NO_INS = "#2a78d6"
 COLOR_ONSHORE_INS = "#eb6834"
 COLOR_BOOSTER_INITIAL = "#1baf7a"
 COLOR_BOOSTER_ADDITIONAL = "#eda100"
+# Same two hues as plot_booster_vs_insulation.py's phase framing (and the
+# earlier HTML dashboard this mirrors): orange = supercritical, blue =
+# liquid. Reused here for the phase-trend chart's line series -- a
+# different encoding than COLOR_ONSHORE_NO_INS/COLOR_ONSHORE_INS above
+# (component, not phase), so kept as separate named constants.
+COLOR_SUPERCRITICAL = "#eb6834"
+COLOR_LIQUID = "#2a78d6"
 GRID_COLOR = "#e1e0d9"
 AXIS_COLOR = "#c3c2b7"
 TEXT_MUTED = "#52514e"
@@ -266,11 +280,89 @@ def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
     print(f"Saved {pdf_path.resolve()}")
 
 
+def _surcharge_value(scenario_key: str) -> float:
+    """Insulation surcharge [%] implied by a sweep scenario's key, treating
+    "(liq_)noins" as the sweep's 0% point -- distinct from the phase
+    benchmark run (bm_sco2 / bm_dense_2), which predates the insulation
+    feature entirely and isn't part of this sweep."""
+    if scenario_key.endswith("noins"):
+        return 0.0
+    m = re.search(r"ins(\d+)$", scenario_key)
+    if not m:
+        raise ValueError(f"Not a sweep scenario: {scenario_key}")
+    return float(m.group(1))
+
+
+def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
+    sc_values, sc_pct = build_cost_category_vs_benchmark(
+        capex_detail, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
+    liq_values, liq_pct = build_cost_category_vs_benchmark(
+        capex_detail, LIQUID_SCENARIOS, LIQUID_BENCHMARK)
+
+    sc_x = [_surcharge_value(sk) for sk in SUPERCRITICAL_SCENARIOS]
+    liq_x = [_surcharge_value(sk) for sk in LIQUID_SCENARIOS]
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True)
+    fig.subplots_adjust(left=0.08, right=0.985, top=0.86, bottom=0.11, hspace=0.3, wspace=0.22)
+
+    for ax, (row, _color) in zip(axes.flat, RELATIVE_ROWS):
+        sc_y = [sc_pct[sk][row] for sk in SUPERCRITICAL_SCENARIOS]
+        liq_y = [liq_pct[sk][row] for sk in LIQUID_SCENARIOS]
+
+        ax.plot(sc_x, sc_y, marker="o", color=COLOR_SUPERCRITICAL, linewidth=2, markersize=5,
+                label="Supercritical", zorder=3)
+        ax.plot(liq_x, liq_y, marker="o", color=COLOR_LIQUID, linewidth=2, markersize=5,
+                label="Liquid", zorder=3)
+
+        ax.axhline(0, color=AXIS_COLOR, linewidth=1.0, zorder=2)
+        ax.set_title(row, fontsize=9.5, color=TEXT_MUTED, fontweight="bold")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}%"))
+        ax.grid(color=GRID_COLOR, linewidth=0.8, zorder=0)
+        ax.set_axisbelow(True)
+        for spine in ("top", "right"):
+            ax.spines[spine].set_visible(False)
+        ax.spines["left"].set_color(AXIS_COLOR)
+        ax.spines["bottom"].set_color(AXIS_COLOR)
+
+    for ax in axes[-1, :]:
+        ax.set_xlabel("Insulation surcharge [%]")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("Deviation from\nphase benchmark [%]")
+    all_x = sorted(set(sc_x) | set(liq_x))
+    axes[0, 0].set_xticks(all_x)
+
+    fig.suptitle("CAPEX detail: % deviation vs. insulation surcharge (EUS)",
+                 fontsize=13, fontweight="bold", y=0.965)
+    legend_handles = [
+        plt.Line2D([0], [0], color=COLOR_SUPERCRITICAL, marker="o", linewidth=2, label="Supercritical"),
+        plt.Line2D([0], [0], color=COLOR_LIQUID, marker="o", linewidth=2, label="Liquid"),
+    ]
+    fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.92),
+               ncol=2, frameon=False, fontsize=9)
+
+    fig.text(
+        0.01, 0.02,
+        "0% surcharge = noins / liq_noins (no insulation, but still part of the sweep -- unlike the "
+        "pre-insulation-feature bm_sco2/bm_dense_2 benchmark runs, which define the 0% deviation "
+        "line here and aren't otherwise part of this trend). Liquid sweep stops at +60%.",
+        fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
+    )
+
+    png_path = out_dir / "capex_detail_trend.png"
+    pdf_path = out_dir / "capex_detail_trend.pdf"
+    fig.savefig(png_path, dpi=300, bbox_inches="tight")
+    fig.savefig(pdf_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {png_path.resolve()}")
+    print(f"Saved {pdf_path.resolve()}")
+
+
 def main(out_dir: Path = OUT_DIR):
     out_dir.mkdir(parents=True, exist_ok=True)
     capex_detail = build_capex_detail()
     plot_capex_detail_absolute(capex_detail, out_dir)
     plot_capex_detail_relative(capex_detail, out_dir)
+    plot_capex_detail_trend(capex_detail, out_dir)
 
 
 if __name__ == "__main__":
