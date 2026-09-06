@@ -182,7 +182,7 @@ def _plot_by_scenario(boostcount: pd.DataFrame, bm_totals: dict, out_dir: Path):
     y_top = ax.get_ylim()[1]
     for mid, label in ((sc_mid, "Supercritical"), (liq_mid, "Liquid")):
         ax.text(mid, y_top * 1.03, label, ha="center", va="bottom",
-                 fontsize=9.5, style="italic", color=TEXT_MUTED)
+                 fontsize=9.5, color=TEXT_MUTED)
     ax.set_ylim(top=y_top * 1.14)
 
     legend_handles = [Patch(facecolor=REASON_COLORS[r], edgecolor=AXIS_COLOR, linewidth=0.5, label=r)
