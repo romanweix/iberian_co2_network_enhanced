@@ -67,6 +67,15 @@ from analysis.eus_full_analysis import (
 
 OUT_DIR = Path("analysis")
 
+# Serif typography matching the thesis's LaTeX body text: STIX (a Times-
+# metric-compatible face bundled with matplotlib) with Liberation Serif /
+# Times as fallbacks, and the STIX math font so any mathtext matches.
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["STIXGeneral", "Liberation Serif", "Times New Roman", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
+})
+
 # Reference scenario per phase for every deviation computed in this module:
 # each phase's own uninsulated sweep scenario, not the pre-insulation-feature
 # benchmark run. SUPERCRITICAL_SCENARIOS / LIQUID_SCENARIOS both list their
@@ -77,22 +86,43 @@ LIQUID_REFERENCE = LIQUID_SCENARIOS[0]                # "liq_noins"
 SUPERCRITICAL_SWEEP = SUPERCRITICAL_SCENARIOS[1:]     # ins20 .. ins150
 LIQUID_SWEEP = LIQUID_SCENARIOS[1:]                   # liq_ins20 .. liq_ins60
 
-# Categorical palette slots 1/2/3/4 (blue/orange/aqua/yellow) from the
-# validated default order in the dataviz skill's references/palette.md.
-COLOR_ONSHORE_NO_INS = "#2a78d6"
-COLOR_ONSHORE_INS = "#eb6834"
-COLOR_BOOSTER_INITIAL = "#1baf7a"
-COLOR_BOOSTER_ADDITIONAL = "#eda100"
+# Muted, print-friendly categorical palette (blue/red/green) instead of the
+# saturated Okabe-Ito set used elsewhere -- a neutral gray stands in as a
+# fourth, de-emphasized slot for "booster initial", which no longer appears
+# in the main absolute chart and is the least important series wherever it
+# still does (the relative-deviation chart).
+COLOR_MUTED_BLUE = "#4A6FA5"
+COLOR_MUTED_RED = "#A65353"
+COLOR_MUTED_GREEN = "#5B8C5A"
+COLOR_MUTED_GRAY = "#8C8C82"
+
+COLOR_ONSHORE_NO_INS = COLOR_MUTED_BLUE
+COLOR_ONSHORE_INS = COLOR_MUTED_RED
+COLOR_BOOSTER_INITIAL = COLOR_MUTED_GRAY
+COLOR_BOOSTER_ADDITIONAL = COLOR_MUTED_GREEN
 # Same two hues as plot_booster_vs_insulation.py's phase framing (and the
-# earlier HTML dashboard this mirrors): orange = supercritical, blue =
+# earlier HTML dashboard this mirrors): red = supercritical, blue =
 # liquid. Reused here for the phase-trend chart's line series -- a
 # different encoding than COLOR_ONSHORE_NO_INS/COLOR_ONSHORE_INS above
 # (component, not phase), so kept as separate named constants.
-COLOR_SUPERCRITICAL = "#eb6834"
-COLOR_LIQUID = "#2a78d6"
-GRID_COLOR = "#e1e0d9"
-AXIS_COLOR = "#c3c2b7"
-TEXT_MUTED = "#52514e"
+COLOR_SUPERCRITICAL = COLOR_MUTED_RED
+COLOR_LIQUID = COLOR_MUTED_BLUE
+GRID_COLOR = "#b3b3b3"
+SPINE_COLOR = "#000000"
+AXIS_COLOR = "#4d4d4d"
+TEXT_MUTED = "#333333"
+
+
+def _style_axes(ax, grid_axis="both"):
+    """Full box axes (all four spines, thin black), subtle dotted gridlines
+    -- matches the muted, LaTeX-print style used throughout this module."""
+    ax.grid(axis=grid_axis, color=GRID_COLOR, linestyle=":", linewidth=0.6, zorder=0)
+    ax.set_axisbelow(True)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color(SPINE_COLOR)
+        spine.set_linewidth(0.8)
+    ax.tick_params(colors=SPINE_COLOR, width=0.8)
 
 
 # Official scenario abbreviations (thesis nomenclature): LP = liquid phase,
@@ -163,13 +193,7 @@ def plot_capex_detail_absolute(capex_detail, out_dir: Path = OUT_DIR):
     ax_booster.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
 
     for ax in (ax_onshore, ax_booster):
-        ax.grid(axis="y", color=GRID_COLOR, linewidth=0.8, zorder=0)
-        ax.set_axisbelow(True)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
-        ax.spines["left"].set_color(AXIS_COLOR)
-    ax_onshore.spines["bottom"].set_visible(False)
-    ax_booster.spines["bottom"].set_color(AXIS_COLOR)
+        _style_axes(ax, grid_axis="y")
 
     fig.suptitle("CAPEX detail by scenario (EUS): onshore pipeline vs. booster stations",
                  fontsize=13, fontweight="bold", y=0.975)
@@ -259,12 +283,7 @@ def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
     ax.axhline(0, color=AXIS_COLOR, linewidth=1.2, zorder=2)
     ax.set_ylabel("Deviation from SC-U / LP-U [%]")
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}%"))
-    ax.grid(axis="y", color=GRID_COLOR, linewidth=0.8, zorder=0)
-    ax.set_axisbelow(True)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    ax.spines["left"].set_color(AXIS_COLOR)
-    ax.spines["bottom"].set_color(AXIS_COLOR)
+    _style_axes(ax, grid_axis="y")
 
     fig.suptitle("CAPEX detail: % deviation from SC-U / LP-U by scenario (EUS)",
                  fontsize=13, fontweight="bold", y=0.965)
@@ -366,12 +385,7 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
 
     all_axes = panel_axes + [insulation_ax]
     for ax in all_axes:
-        ax.grid(color=GRID_COLOR, linewidth=0.8, zorder=0)
-        ax.set_axisbelow(True)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
-        ax.spines["left"].set_color(AXIS_COLOR)
-        ax.spines["bottom"].set_color(AXIS_COLOR)
+        _style_axes(ax)
     for ax in (axes[1, 0], axes[1, 1], insulation_ax):
         ax.set_xlabel("Insulation surcharge [%]")
     all_x = sorted(set(sc_x) | set(liq_x))
@@ -460,12 +474,7 @@ def plot_capex_detail_components(capex_detail, out_dir: Path = OUT_DIR):
 
         ax.set_xlabel("Insulation surcharge [%]")
         ax.set_xticks(all_x)
-        ax.grid(color=GRID_COLOR, linewidth=0.8, zorder=0)
-        ax.set_axisbelow(True)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
-        ax.spines["left"].set_color(AXIS_COLOR)
-        ax.spines["bottom"].set_color(AXIS_COLOR)
+        _style_axes(ax)
 
         fig.suptitle(title, fontsize=12.5, fontweight="bold", y=0.965)
         ax.legend(loc="best", frameon=False, fontsize=9.5)
