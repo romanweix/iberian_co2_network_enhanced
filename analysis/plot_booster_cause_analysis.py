@@ -168,14 +168,16 @@ def _plot_by_scenario(boostcount: pd.DataFrame, bm_totals: dict, out_dir: Path):
     legend_handles = [Patch(facecolor=REASON_COLORS[r], label=r) for r in REASON_ORDER
                        if boostcount[r].sum() > 0]
     legend_handles.append(Patch(facecolor=COLOR_UNKNOWN_REASON, edgecolor=TEXT_MUTED, hatch="////",
-                                 label="Total boosters (reason not available)†"))
+                                 label="Total boosters (reason: pressure only)†"))
     fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.905),
                ncol=2, frameon=False, fontsize=8.5)
 
     fig.text(
         0.01, 0.01,
-        "† pre-insulation-feature benchmark run (SC-BM / LP-BM): total boosters shown; "
-        "pressure/temperature split needs pipe-level columns these runs don't export.\n"
+        "† pre-insulation-feature benchmark run (SC-BM / LP-BM): these predate the "
+        "temperature constraint entirely, so pressure is the only possible cause; "
+        "shown as a total rather than split, since they don't export the pipe-level "
+        "columns the split is computed from.\n"
         "Data: analysis/model_results (base_utilization), two-pass classification -- "
         "see analysis/booster_cause_analysis.py / .xlsx.",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
