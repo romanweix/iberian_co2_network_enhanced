@@ -139,15 +139,21 @@ for col, u_val in enumerate(u_values):
         print(f"{u_val:<7} | {d:<5.1f} | {x_end_km:<5.0f} | {dp_ende_bar:<7.1f} | {dT_ende_c:<7.1f} | {x_dpmax_km:<7.1f} | {dp_max_bar:<7.1f} | {dT_dpmax_c:<8.1f} | {x_tmin_km:<6.1f} | {dp_tmin_bar:<7.1f} | {dT_tmin_c:<7.1f}")
 
         # Plots (bleiben absolut)
-        axes[0, col].plot(x/1000, p/1e5, color=colors[i], label=f"D={d/0.0254}inch")
+        #axes[0, col].plot(x/1000, p/1e5, color=colors[i], label=f"D={d}m")
+        axes[0, col].plot(x/1000, p/1e5, color=colors[i])
         if activate_temp:
             axes[1, col].plot(x/1000, t_in, color=colors[i])
     
     # --- Beschriftung der Spalten ---
-    axes[0, col].set_title(f"\ninsulation U = {u_val} W/m²K", fontsize=14, fontweight='bold')
+    if u_val == 0.43:
+        ins_text = "well insulated"
+    if u_val == 2:
+        ins_text = "poorly insulated"
+    axes[0, col].set_title(f"\n{ins_text}", fontsize=14, fontweight='bold')
+    # axes[0, col].set_title(f"\ninsulation U = {u_val} W/m²K", fontsize=14, fontweight='bold')
 
     # --- Subplot 1: Druck ---
-    axes[0, col].axhline(73.8, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 73.8 bar")
+    # axes[0, col].axhline(73.8, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 73.8 bar")
     axes[0, col].grid(True, alpha=0.2)
     if col == 0: axes[0, col].set_ylabel("\npressure [bar]")
     axes[0, col].legend(fontsize='x-small')
@@ -155,7 +161,8 @@ for col, u_val in enumerate(u_values):
     # --- Subplot 2: Temperatur ---
     if activate_temp:
         axes[1, col].plot(x/1000, t_ext_profile, 'k--', alpha=0.4, label="ambient temp")
-        axes[1, col].axhline(31.1, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 31.1°C")
+        #axes[1, col].axhline(31.1, color='red', linestyle='--', alpha=0.5)
+        #axes[1, col].axhline(31.1, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 31.1°C")
         #axes[1, col].axhline(10.0, color='red', linestyle='-', alpha=0.5, label="ice threshold = 10.0°C")
         axes[1, col].grid(True, alpha=0.2)
         if col == 0: axes[1, col].set_ylabel("\ntemperature [°C]")
@@ -168,6 +175,7 @@ for col, u_val in enumerate(u_values):
     axes[height_subplot_row, col].grid(True, alpha=0.2)
     if col == 0: axes[height_subplot_row, col].set_ylabel("\ntopology [m]")
     axes[height_subplot_row, col].set_xlabel("distance [km]\n\n")
+
 
 plt.tight_layout()
 plt.show()
