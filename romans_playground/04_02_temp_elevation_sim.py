@@ -79,9 +79,16 @@ for col, u_val in enumerate(u_values):
         area = np.pi * (d**2) / 4
         
         for j in range(len(x) - 1):
+
             if activate_temp and rho_dynamic:
                 T_kelvin = t_in[j] + 273.15
                 P_pascal = p[j]
+
+                if T_kelvin < (32 + 273.15):
+                    T_kelvin = 32 + 273.15
+                        
+                if P_pascal < 100e5:
+                    P_pascal = 100e5
 
                 rho_curr = CP.PropsSI('D', 'P', P_pascal, 'T', T_kelvin, 'CO2')
                 cp_curr = CP.PropsSI('C', 'P', P_pascal, 'T', T_kelvin, 'CO2')
