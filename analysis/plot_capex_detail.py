@@ -154,15 +154,12 @@ def plot_capex_detail_absolute(capex_detail, out_dir: Path = OUT_DIR):
                         bottom=col["CAPEX onshore pipeline without insulation"],
                         color=COLOR_ONSHORE_INS, edgecolor="white", linewidth=0.6, zorder=3)
 
-        ax_booster.bar(x, col["CAPEX booster initial"], bar_width,
-                        color=COLOR_BOOSTER_INITIAL, edgecolor="white", linewidth=0.6, zorder=3)
         ax_booster.bar(x, col["CAPEX booster additional"], bar_width,
-                        bottom=col["CAPEX booster initial"],
                         color=COLOR_BOOSTER_ADDITIONAL, edgecolor="white", linewidth=0.6, zorder=3)
 
     ax_onshore.set_ylabel("Onshore pipeline CAPEX [M€]")
     ax_onshore.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
-    ax_booster.set_ylabel("Booster CAPEX [M€]")
+    ax_booster.set_ylabel("Booster CAPEX\n(additional/retrofit only) [M€]")
     ax_booster.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
 
     for ax in (ax_onshore, ax_booster):
@@ -180,7 +177,6 @@ def plot_capex_detail_absolute(capex_detail, out_dir: Path = OUT_DIR):
     legend_handles = [
         Patch(facecolor=COLOR_ONSHORE_NO_INS, label="Onshore pipeline (without insulation)"),
         Patch(facecolor=COLOR_ONSHORE_INS, label="Onshore insulation"),
-        Patch(facecolor=COLOR_BOOSTER_INITIAL, label="Booster (initial build)"),
         Patch(facecolor=COLOR_BOOSTER_ADDITIONAL, label="Booster (additional/retrofit)"),
     ]
     fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.925),
