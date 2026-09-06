@@ -22,11 +22,12 @@
 #       (insulation removes the pipe's own heat loss as a constraint,
 #       leaving pressure as the remaining one).
 #
-# Colors: the Okabe-Ito colorblind-safe categorical palette (Wong, 2011,
-# "Points of view: Color blindness", Nature Methods) -- the standard
-# scientific-figure choice for categorical data, distinct from the rest of
-# this repo's plot_*.py figures (which use the dataviz skill's default
-# palette instead).
+# Style: a classic print/journal look for thesis figures -- serif fonts
+# (matching a LaTeX document's body text), thin black axes, minimal dotted
+# gridlines, and a desaturated categorical palette (the muted
+# blue/red/green triad common to matplotlib/seaborn's "deep"/"muted"
+# themes) rather than the vivid Okabe-Ito set used previously. No in-figure
+# title: the caption is expected to come from the thesis's own \caption{}.
 #
 # Usage (from the repo root):
 #   python -m analysis.plot_booster_cause_analysis
@@ -47,15 +48,32 @@ from analysis.booster_cause_analysis import (
 OUT_DIR = Path("analysis")
 RESULTS_DIR = Path("analysis/results_data")
 
-# Okabe-Ito colorblind-safe categorical palette (scientific-figure standard).
-COLOR_PRESSURE = "#0072B2"      # blue
-COLOR_TEMPERATURE = "#D55E00"   # vermillion
-COLOR_BOTH = "#009E73"          # bluish green
-COLOR_INCONCLUSIVE = "#898781"  # muted ink -- data-limitation label, not a physical category
-COLOR_UNKNOWN_REASON = "#999999"  # BM runs: total known, reason split not (Okabe-Ito grey)
-GRID_COLOR = "#e1e0d9"
-AXIS_COLOR = "#c3c2b7"
-TEXT_MUTED = "#52514e"
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Nimbus Roman", "STIX Two Text", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
+    "text.color": "#1a1a1a",
+    "axes.edgecolor": "#333333",
+    "axes.labelcolor": "#1a1a1a",
+    "axes.linewidth": 0.8,
+    "xtick.color": "#333333",
+    "ytick.color": "#333333",
+    "grid.color": "#c9c9c9",
+    "grid.linewidth": 0.5,
+    "grid.linestyle": ":",
+    "legend.frameon": False,
+})
+
+# Desaturated categorical palette (matplotlib/seaborn "muted" triad) --
+# print-friendly, low-saturation colors typical of journal figures.
+COLOR_PRESSURE = "#4C72B0"      # muted blue
+COLOR_TEMPERATURE = "#C44E52"   # muted brick red
+COLOR_BOTH = "#55A868"          # muted green
+COLOR_INCONCLUSIVE = "#8C8C8C"  # grey -- data-limitation label, not a physical category
+COLOR_UNKNOWN_REASON = "#B0B0B0"  # BM runs: total known, reason split not
+GRID_COLOR = "#c9c9c9"
+AXIS_COLOR = "#333333"
+TEXT_MUTED = "#404040"
 
 REASON_COLORS = {
     "Pressure only": COLOR_PRESSURE,
@@ -104,12 +122,16 @@ def _layout_positions(supercritical_order, liquid_order):
 
 
 def _style_axes(ax):
-    ax.grid(axis="y", color=GRID_COLOR, linewidth=0.8, zorder=0)
+    """Classic journal-figure axes: a full box (all four spines), thin,
+    with light dotted horizontal gridlines only -- rather than the
+    open/minimalist (top+right spines removed) style used elsewhere in
+    this repo's plot_*.py figures."""
+    ax.grid(axis="y", color=GRID_COLOR, linewidth=0.5, linestyle=":", zorder=0)
     ax.set_axisbelow(True)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    ax.spines["left"].set_color(AXIS_COLOR)
-    ax.spines["bottom"].set_color(AXIS_COLOR)
+    for spine in ax.spines.values():
+        spine.set_color(AXIS_COLOR)
+        spine.set_linewidth(0.8)
+    ax.tick_params(width=0.8)
 
 
 def _save(fig, name: str, out_dir: Path):
@@ -128,7 +150,7 @@ def _plot_by_scenario(boostcount: pd.DataFrame, bm_totals: dict, out_dir: Path):
     bm_codes = set(BM_SOURCES.keys())
 
     fig, ax = plt.subplots(figsize=(9, 5.2))
-    fig.subplots_adjust(left=0.09, right=0.98, top=0.8, bottom=0.2)
+    fig.subplots_adjust(left=0.09, right=0.98, top=0.85, bottom=0.2)
     bar_width = 0.75
 
     for sk in all_scenarios:
@@ -154,22 +176,20 @@ def _plot_by_scenario(boostcount: pd.DataFrame, bm_totals: dict, out_dir: Path):
     ax.set_xlim(min(xs) - 1.0, max(xs) + 1.0)
 
     sep_x = (positions[SUPERCRITICAL_ORDER[-1]] + positions[LIQUID_ORDER[0]]) / 2
-    ax.axvline(sep_x, color=AXIS_COLOR, linewidth=0.8, linestyle="--", zorder=1)
+    ax.axvline(sep_x, color=AXIS_COLOR, linewidth=0.6, linestyle=":", zorder=1)
     sc_mid = sum(positions[sk] for sk in SUPERCRITICAL_ORDER) / len(SUPERCRITICAL_ORDER)
     liq_mid = sum(positions[sk] for sk in LIQUID_ORDER) / len(LIQUID_ORDER)
     y_top = ax.get_ylim()[1]
     for mid, label in ((sc_mid, "Supercritical"), (liq_mid, "Liquid")):
         ax.text(mid, y_top * 1.03, label, ha="center", va="bottom",
-                 fontsize=9, fontweight="bold", color=TEXT_MUTED)
-    ax.set_ylim(top=y_top * 1.16)
+                 fontsize=9.5, style="italic", color=TEXT_MUTED)
+    ax.set_ylim(top=y_top * 1.14)
 
-    fig.suptitle("Why boosters were needed: pressure vs. temperature",
-                 fontsize=13, fontweight="bold", y=0.99)
-    legend_handles = [Patch(facecolor=REASON_COLORS[r], label=r) for r in REASON_ORDER
-                       if boostcount[r].sum() > 0]
-    legend_handles.append(Patch(facecolor=COLOR_UNKNOWN_REASON, edgecolor=TEXT_MUTED, hatch="////",
-                                 label="Total boosters (reason: pressure only)"))
-    fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.905),
+    legend_handles = [Patch(facecolor=REASON_COLORS[r], edgecolor=AXIS_COLOR, linewidth=0.5, label=r)
+                       for r in REASON_ORDER if boostcount[r].sum() > 0]
+    legend_handles.append(Patch(facecolor=COLOR_UNKNOWN_REASON, edgecolor=AXIS_COLOR, linewidth=0.5,
+                                 hatch="////", label="Total boosters (reason: pressure only)"))
+    fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.99),
                ncol=2, frameon=False, fontsize=8.5)
 
     fig.text(
@@ -194,7 +214,7 @@ def _plot_by_phase(by_phase_ins: pd.DataFrame, out_dir: Path):
     ]
 
     fig, ax = plt.subplots(figsize=(6, 5.2))
-    fig.subplots_adjust(left=0.14, right=0.97, top=0.83, bottom=0.15)
+    fig.subplots_adjust(left=0.14, right=0.97, top=0.87, bottom=0.15)
 
     group_x = list(range(len(groups)))
     for gx, (phase, insulated, _) in zip(group_x, groups):
@@ -215,10 +235,9 @@ def _plot_by_phase(by_phase_ins: pd.DataFrame, out_dir: Path):
     ax.set_xticklabels([g[2] for g in groups], fontsize=9)
     _style_axes(ax)
 
-    fig.suptitle("Reason share by phase / insulation", fontsize=13, fontweight="bold", y=0.99)
-    legend_handles = [Patch(facecolor=REASON_COLORS[r], label=r) for r in REASON_ORDER
-                       if (by_phase_ins[f"{r} [%]"] > 0).any()]
-    fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.91),
+    legend_handles = [Patch(facecolor=REASON_COLORS[r], edgecolor=AXIS_COLOR, linewidth=0.5, label=r)
+                       for r in REASON_ORDER if (by_phase_ins[f"{r} [%]"] > 0).any()]
+    fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.99),
                ncol=len(legend_handles), frameon=False, fontsize=8.5)
 
     fig.text(
