@@ -8,9 +8,13 @@
 #
 #   (A) Installed boosters per scenario, stacked by Reason (Pressure only /
 #       Temperature only / Both) -- one bar per insulation-surcharge sweep
-#       scenario, grouped by phase (supercritical / liquid). Same
-#       categorical palette as plot_booster_vs_insulation.py, for visual
-#       consistency across the thesis's figures.
+#       scenario, grouped by phase (supercritical / liquid), each group led
+#       by its benchmark run (BM predates the insulation/temperature
+#       feature, so only its total booster count is available, drawn
+#       hatched -- see build_booster_reasons()'s equivalent fallback in
+#       eus_full_analysis.py). Same categorical palette as
+#       plot_booster_vs_insulation.py, for visual consistency across the
+#       thesis's figures.
 #   (B) Reason share [%] by phase x insulation status -- shows how adding
 #       insulation shifts a scenario's boosters away from
 #       temperature-driven and towards pressure-driven (insulation removes
@@ -20,20 +24,21 @@
 # Usage (from the repo root):
 #   python -m analysis.plot_booster_cause_analysis
 
-import re
 from pathlib import Path
 
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 from analysis.booster_cause_analysis import (
-    booster_cause_analysis, _checkpoint_files, _scenario_code,
+    booster_cause_analysis, _checkpoint_files,
     REASON_ORDER, MODEL_RESULTS_DIR_DEFAULT, UTIL_W_DEFAULT,
 )
 
 OUT_DIR = Path("analysis")
+RESULTS_DIR = Path("analysis/results_data")
 
 # Categorical palette slots 1/2/3 (blue/orange/aqua), same assignment as
 # plot_booster_vs_insulation.py's REASON_COLORS.
@@ -41,6 +46,7 @@ COLOR_PRESSURE = "#2a78d6"
 COLOR_TEMPERATURE = "#eb6834"
 COLOR_BOTH = "#1baf7a"
 COLOR_INCONCLUSIVE = "#898781"
+COLOR_UNKNOWN_REASON = "#c3c2b7"  # BM runs: total known, reason split not
 GRID_COLOR = "#e1e0d9"
 AXIS_COLOR = "#c3c2b7"
 TEXT_MUTED = "#52514e"
@@ -53,18 +59,31 @@ REASON_COLORS = {
 }
 
 # Sweep scenario codes (see analysis/model_results/*_model_checkpoint.dill),
-# benchmark-excluded (LPBM/SCBM carry no per-pipe pressure/temperature
-# data -- booster_cause_analysis.py drops them upstream), each group
-# starting at its "no insulation" baseline.
-SUPERCRITICAL_ORDER = ["SCU", "SCI20", "SCI40", "SCI60", "SCI80", "SCI100", "SCI150"]
-LIQUID_ORDER = ["LPU", "LPI20", "LPI40", "LPI60"]
+# each group led by its benchmark run. BM predates the insulation/temperature
+# feature (excluded from booster_cause_analysis.py's own processing -- no
+# per-pipe pressure/temperature/insulation data), so its total booster count
+# is read separately, straight from the exported results_data workbook.
+SUPERCRITICAL_ORDER = ["SCBM", "SCU", "SCI20", "SCI40", "SCI60", "SCI80", "SCI100", "SCI150"]
+LIQUID_ORDER = ["LPBM", "LPU", "LPI20", "LPI40", "LPI60"]
+
+SCENARIO_LABELS = {
+    "SCBM": "SC-BM", "SCU": "SC-U", "SCI20": "SC-I20", "SCI40": "SC-I40",
+    "SCI60": "SC-I60", "SCI80": "SC-I80", "SCI100": "SC-I100", "SCI150": "SC-I150",
+    "LPBM": "LP-BM", "LPU": "LP-U", "LPI20": "LP-I20", "LPI40": "LP-I40", "LPI60": "LP-I60",
+}
+
+# BM total-booster source: (results_data filename stem, scenario code)
+BM_SOURCES = {"SCBM": "bm_sco2", "LPBM": "bm_dense_2"}
 
 
-def _scenario_label(code: str) -> str:
-    if code.endswith("U"):
-        return "No ins."
-    m = re.search(r"I(\d+)$", code)
-    return f"+{m.group(1)}%" if m else code
+def _bm_total_boosters(results_dir: Path) -> dict:
+    totals = {}
+    for code, stem in BM_SOURCES.items():
+        f = results_dir / f"{stem}_stochastic_results_theta_1.00.xlsx"
+        df = pd.read_excel(f, sheet_name="EUS - Pipes")
+        installed = df[df["Installed"] == 1]
+        totals[code] = installed["Number of boosters"].fillna(0).sum()
+    return totals
 
 
 def _layout_positions(supercritical_order, liquid_order):
@@ -85,6 +104,7 @@ def plot_booster_cause_analysis(out_dir: Path = OUT_DIR):
     result = booster_cause_analysis(files, UTIL_W_DEFAULT)
     detail = result["detail"]
     by_phase_ins = result["by_phase_ins"].set_index(["Phase", "Insulated"])
+    bm_totals = _bm_total_boosters(RESULTS_DIR)
 
     boostcount = (
         detail.groupby(["Scenario", "Reason"])["Number of boosters"].sum().unstack(fill_value=0.0)
@@ -95,6 +115,7 @@ def plot_booster_cause_analysis(out_dir: Path = OUT_DIR):
 
     positions = _layout_positions(SUPERCRITICAL_ORDER, LIQUID_ORDER)
     all_scenarios = SUPERCRITICAL_ORDER + LIQUID_ORDER
+    bm_codes = set(BM_SOURCES.keys())
 
     fig, (ax_count, ax_share) = plt.subplots(
         1, 2, figsize=(12.5, 5.2), gridspec_kw={"width_ratios": [1.55, 1], "wspace": 0.28},
@@ -105,6 +126,10 @@ def plot_booster_cause_analysis(out_dir: Path = OUT_DIR):
     # --- Panel A: installed boosters per scenario, stacked by reason -----
     for sk in all_scenarios:
         x = positions[sk]
+        if sk in bm_codes:
+            ax_count.bar(x, bm_totals[sk], bar_width, color=COLOR_UNKNOWN_REASON,
+                         edgecolor=TEXT_MUTED, linewidth=0.6, hatch="////", zorder=3)
+            continue
         bottom = 0.0
         for reason in REASON_ORDER:
             v = boostcount.loc[sk, reason] if sk in boostcount.index else 0.0
@@ -124,7 +149,7 @@ def plot_booster_cause_analysis(out_dir: Path = OUT_DIR):
 
     xs = [positions[sk] for sk in all_scenarios]
     ax_count.set_xticks(xs)
-    ax_count.set_xticklabels([_scenario_label(sk) for sk in all_scenarios], fontsize=8.5)
+    ax_count.set_xticklabels([SCENARIO_LABELS[sk] for sk in all_scenarios], fontsize=8, rotation=45, ha="right")
     ax_count.set_xlim(min(xs) - 1.0, max(xs) + 1.0)
 
     sep_x = (positions[SUPERCRITICAL_ORDER[-1]] + positions[LIQUID_ORDER[0]]) / 2
@@ -132,7 +157,7 @@ def plot_booster_cause_analysis(out_dir: Path = OUT_DIR):
     sc_mid = sum(positions[sk] for sk in SUPERCRITICAL_ORDER) / len(SUPERCRITICAL_ORDER)
     liq_mid = sum(positions[sk] for sk in LIQUID_ORDER) / len(LIQUID_ORDER)
     y_top = ax_count.get_ylim()[1]
-    for mid, label in ((sc_mid, "Supercritical"), (liq_mid, "Liquid/dense")):
+    for mid, label in ((sc_mid, "Supercritical"), (liq_mid, "Liquid")):
         ax_count.text(mid, y_top * 1.03, label, ha="center", va="bottom",
                        fontsize=8.5, fontweight="bold", color=TEXT_MUTED)
     ax_count.set_ylim(top=y_top * 1.14)
@@ -141,7 +166,7 @@ def plot_booster_cause_analysis(out_dir: Path = OUT_DIR):
     groups = [
         ("supercritical", False, "Supercritical\n(no ins.)"),
         ("supercritical", True, "Supercritical\n(insulated)"),
-        ("liquid/dense", False, "Liquid/dense\n(no ins.)"),
+        ("liquid/dense", False, "Liquid\n(no ins.)"),
     ]
     group_x = list(range(len(groups)))
     for gx, (phase, insulated, _) in zip(group_x, groups):
@@ -168,18 +193,21 @@ def plot_booster_cause_analysis(out_dir: Path = OUT_DIR):
     ax_share.spines["left"].set_color(AXIS_COLOR)
     ax_share.spines["bottom"].set_color(AXIS_COLOR)
 
-    fig.suptitle("Why boosters were needed: pressure vs. temperature (EUS)",
+    fig.suptitle("Why boosters were needed: pressure vs. temperature",
                  fontsize=13, fontweight="bold", y=0.975)
     legend_handles = [Patch(facecolor=REASON_COLORS[r], label=r) for r in REASON_ORDER
                        if boostcount[r].sum() > 0 or (by_phase_ins[f"{r} [%]"] > 0).any()]
+    legend_handles.append(Patch(facecolor=COLOR_UNKNOWN_REASON, edgecolor=TEXT_MUTED, hatch="////",
+                                 label="Total boosters (reason not available)†"))
     fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.90),
                ncol=len(legend_handles), frameon=False, fontsize=8.5)
 
     fig.text(
         0.01, 0.015,
-        "Data: analysis/model_results (EUS, base_utilization), two-pass classification -- "
-        "see analysis/booster_cause_analysis.py / .xlsx. Benchmark runs (SCBM/LPBM) excluded: "
-        "no per-pipe pressure/temperature/insulation data.",
+        "† pre-insulation-feature benchmark run (SC-BM / LP-BM): total boosters shown; "
+        "pressure/temperature split needs pipe-level columns these runs don't export.\n"
+        "Data: analysis/model_results (base_utilization), two-pass classification -- "
+        "see analysis/booster_cause_analysis.py / .xlsx.",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
     )
 
