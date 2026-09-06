@@ -83,13 +83,19 @@ AXIS_COLOR = "#c3c2b7"
 TEXT_MUTED = "#52514e"
 
 
+# Official scenario abbreviations (thesis nomenclature): LP = liquid phase,
+# SC = supercritical; -BM = benchmark, -U = uninsulated (still part of the
+# insulation-surcharge sweep, unlike -BM), -I<pct> = insulation surcharge.
+SCENARIO_ABBR = {
+    "bm_dense_2": "LP-BM", "liq_noins": "LP-U", "liq_ins20": "LP-I20",
+    "liq_ins40": "LP-I40", "liq_ins60": "LP-I60",
+    "bm_sco2": "SC-BM", "noins": "SC-U", "ins20": "SC-I20", "ins40": "SC-I40",
+    "ins60": "SC-I60", "ins80": "SC-I80", "ins100": "SC-I100", "ins150": "SC-I150",
+}
+
+
 def _scenario_label(scenario_key: str) -> str:
-    if scenario_key in (SUPERCRITICAL_BENCHMARK, LIQUID_BENCHMARK):
-        return "BM*"
-    if scenario_key.endswith("noins"):
-        return "No ins."
-    m = re.search(r"ins(\d+)$", scenario_key)
-    return f"+{m.group(1)}%" if m else scenario_key
+    return SCENARIO_ABBR.get(scenario_key, scenario_key)
 
 
 def _layout_positions(supercritical_order, liquid_order):
@@ -181,8 +187,7 @@ def plot_capex_detail_absolute(capex_detail, out_dir: Path = OUT_DIR):
 
     fig.text(
         0.01, 0.015,
-        "* phase benchmark run (bm_sco2 / bm_dense_2), which predates the insulation feature "
-        "(CAPEX onshore insulation = 0 there).\n"
+        "SC-BM/LP-BM predate the insulation feature (CAPEX onshore insulation = 0 there).\n"
         "Data: analysis/EUS_full_analysis.xlsx, 'CAPEX detail - supercritical'/'CAPEX detail - liquid' tabs (EUS).",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
     )
@@ -272,7 +277,7 @@ def plot_capex_detail_relative(capex_detail, out_dir: Path = OUT_DIR):
 
     fig.text(
         0.01, 0.02,
-        "* phase benchmark run (bm_sco2 / bm_dense_2) -- 0% by definition. "
+        "SC-BM/LP-BM -- 0% by definition. "
         "'CAPEX onshore insulation' is omitted: its own deviation is undefined for every scenario "
         "(both benchmarks predate the insulation feature, so their insulation CAPEX is 0) -- see "
         "the 'CAPEX detail' tabs in EUS_full_analysis.xlsx for that row's absolute values instead.",
@@ -378,8 +383,8 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
 
     fig.text(
         0.01, 0.02,
-        "0% surcharge = noins / liq_noins (no insulation, but still part of the sweep -- unlike the "
-        "pre-insulation-feature bm_sco2/bm_dense_2 benchmark runs, which define the 0% deviation "
+        "0% surcharge = SC-U / LP-U (no insulation, but still part of the sweep -- unlike the "
+        "pre-insulation-feature SC-BM/LP-BM benchmark runs, which define the 0% deviation "
         "line in the four left/center panels and aren't otherwise part of this trend). Liquid sweep "
         "stops at +60%. † both benchmark runs predate the insulation feature (insulation CAPEX = 0 "
         "there), so this row's deviation from benchmark is undefined -- its absolute value is shown instead.",
@@ -462,9 +467,9 @@ def plot_capex_detail_components(capex_detail, out_dir: Path = OUT_DIR):
         ax.legend(loc="best", frameon=False, fontsize=9.5)
 
         footnote = (
-            "0% surcharge = noins / liq_noins (still part of the sweep). Liquid sweep stops at +60%."
+            "0% surcharge = SC-U / LP-U (still part of the sweep). Liquid sweep stops at +60%."
             if not is_insulation else
-            "0% surcharge = noins / liq_noins (still part of the sweep). Liquid sweep stops at +60%. "
+            "0% surcharge = SC-U / LP-U (still part of the sweep). Liquid sweep stops at +60%. "
             "† both benchmark runs predate the insulation feature (insulation CAPEX = 0 there), so "
             "this row's deviation from benchmark is undefined -- its absolute value is shown instead."
         )
