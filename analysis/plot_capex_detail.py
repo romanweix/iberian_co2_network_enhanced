@@ -19,13 +19,16 @@
 #   capex_detail_relative.png -- one panel, % deviation from each scenario's
 #       phase benchmark, grouped by scenario, for the four rows that have a
 #       defined deviation (see note below on the insulation row).
-#   capex_detail_trend.png -- 2x2 small multiples, one per CAPEX row (same
-#       four as capex_detail_relative.png), each plotting that row's %
-#       deviation from benchmark AS A LINE against the insulation surcharge
-#       [%] -- an ordered quantity, unlike the categorical scenario axis
-#       used in the other two figures -- with supercritical and liquid as
-#       two separate lines so the two phases' trends are directly
-#       comparable on shared axes.
+#   capex_detail_trend.png -- 2x3 small multiples (one cell left empty),
+#       one per CAPEX row, each plotting that row's value AS A LINE against
+#       the insulation surcharge [%] -- an ordered quantity, unlike the
+#       categorical scenario axis used in the other two figures -- with
+#       supercritical and liquid as two separate lines so the two phases'
+#       trends are directly comparable on shared axes. Four panels plot %
+#       deviation from benchmark (same four rows as capex_detail_relative.png);
+#       the fifth ("CAPEX onshore insulation") plots the absolute M€ value
+#       instead, since its deviation from benchmark is undefined (see
+#       INSULATION_ROW below).
 #
 # The "CAPEX onshore insulation" row is a memo-only breakout of the total,
 # not one of the two summed here -- and its own % deviation is undefined
@@ -293,6 +296,15 @@ def _surcharge_value(scenario_key: str) -> float:
     return float(m.group(1))
 
 
+# "CAPEX onshore insulation" plotted alongside RELATIVE_ROWS' four %-deviation
+# panels, but as its own absolute-M€ panel rather than a fifth % line: both
+# phase benchmarks predate the insulation feature (insulation CAPEX = 0
+# there), so this row's deviation from benchmark is undefined for every
+# scenario (see build_cost_category_vs_benchmark()'s divide-by-zero guard) --
+# there is no benchmark value to plot a trend of deviation from.
+INSULATION_ROW = "CAPEX onshore insulation"
+
+
 def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
     sc_values, sc_pct = build_cost_category_vs_benchmark(
         capex_detail, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
@@ -302,10 +314,13 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
     sc_x = [_surcharge_value(sk) for sk in SUPERCRITICAL_SCENARIOS]
     liq_x = [_surcharge_value(sk) for sk in LIQUID_SCENARIOS]
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True)
-    fig.subplots_adjust(left=0.08, right=0.985, top=0.86, bottom=0.11, hspace=0.3, wspace=0.22)
+    fig, axes = plt.subplots(2, 3, figsize=(15.5, 8), sharex=True)
+    fig.subplots_adjust(left=0.06, right=0.99, top=0.86, bottom=0.11, hspace=0.3, wspace=0.25)
+    panel_axes = [axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]]
+    insulation_ax = axes[0, 2]
+    axes[1, 2].set_visible(False)
 
-    for ax, (row, _color) in zip(axes.flat, RELATIVE_ROWS):
+    for ax, (row, _color) in zip(panel_axes, RELATIVE_ROWS):
         sc_y = [sc_pct[sk][row] for sk in SUPERCRITICAL_SCENARIOS]
         liq_y = [liq_pct[sk][row] for sk in LIQUID_SCENARIOS]
 
@@ -317,17 +332,33 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
         ax.axhline(0, color=AXIS_COLOR, linewidth=1.0, zorder=2)
         ax.set_title(row, fontsize=9.5, color=TEXT_MUTED, fontweight="bold")
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}%"))
+        ax.set_ylabel("Deviation from\nphase benchmark [%]")
+
+    # Insulation panel: absolute M€, not % deviation (see INSULATION_ROW note
+    # above) -- same x-axis, its own y-axis/units, clearly labelled so it
+    # isn't mistaken for a fifth deviation line.
+    sc_ins_y = [capex_detail[sk][INSULATION_ROW] for sk in SUPERCRITICAL_SCENARIOS]
+    liq_ins_y = [capex_detail[sk][INSULATION_ROW] for sk in LIQUID_SCENARIOS]
+    insulation_ax.plot(sc_x, sc_ins_y, marker="o", color=COLOR_SUPERCRITICAL, linewidth=2,
+                        markersize=5, label="Supercritical", zorder=3)
+    insulation_ax.plot(liq_x, liq_ins_y, marker="o", color=COLOR_LIQUID, linewidth=2,
+                        markersize=5, label="Liquid", zorder=3)
+    insulation_ax.axhline(0, color=AXIS_COLOR, linewidth=1.0, zorder=2)
+    insulation_ax.set_title(f"{INSULATION_ROW} (absolute, not vs. benchmark†)",
+                             fontsize=9.5, color=TEXT_MUTED, fontweight="bold")
+    insulation_ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    insulation_ax.set_ylabel("CAPEX [M€]")
+
+    all_axes = panel_axes + [insulation_ax]
+    for ax in all_axes:
         ax.grid(color=GRID_COLOR, linewidth=0.8, zorder=0)
         ax.set_axisbelow(True)
         for spine in ("top", "right"):
             ax.spines[spine].set_visible(False)
         ax.spines["left"].set_color(AXIS_COLOR)
         ax.spines["bottom"].set_color(AXIS_COLOR)
-
-    for ax in axes[-1, :]:
+    for ax in (axes[1, 0], axes[1, 1], insulation_ax):
         ax.set_xlabel("Insulation surcharge [%]")
-    for ax in axes[:, 0]:
-        ax.set_ylabel("Deviation from\nphase benchmark [%]")
     all_x = sorted(set(sc_x) | set(liq_x))
     axes[0, 0].set_xticks(all_x)
 
@@ -344,7 +375,9 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
         0.01, 0.02,
         "0% surcharge = noins / liq_noins (no insulation, but still part of the sweep -- unlike the "
         "pre-insulation-feature bm_sco2/bm_dense_2 benchmark runs, which define the 0% deviation "
-        "line here and aren't otherwise part of this trend). Liquid sweep stops at +60%.",
+        "line in the four left/center panels and aren't otherwise part of this trend). Liquid sweep "
+        "stops at +60%. † both benchmark runs predate the insulation feature (insulation CAPEX = 0 "
+        "there), so this row's deviation from benchmark is undefined -- its absolute value is shown instead.",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
     )
 
