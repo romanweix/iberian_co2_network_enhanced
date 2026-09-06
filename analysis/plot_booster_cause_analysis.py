@@ -168,7 +168,7 @@ def _plot_by_scenario(boostcount: pd.DataFrame, bm_totals: dict, out_dir: Path):
     legend_handles = [Patch(facecolor=REASON_COLORS[r], label=r) for r in REASON_ORDER
                        if boostcount[r].sum() > 0]
     legend_handles.append(Patch(facecolor=COLOR_UNKNOWN_REASON, edgecolor=TEXT_MUTED, hatch="////",
-                                 label="Total boosters (reason: pressure only)†"))
+                                 label="Total boosters (reason: pressure only)"))
     fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 0.905),
                ncol=2, frameon=False, fontsize=8.5)
 
