@@ -30,6 +30,11 @@
 #       instead, since its deviation from benchmark is undefined (see
 #       INSULATION_ROW below).
 #
+# Plus one more figure per CAPEX_DETAIL_ROWS component (5 total,
+# capex_component_*.png) -- the same trend line as one panel of
+# capex_detail_trend.png, but each full-size and on its own, for use one
+# at a time (e.g. in a thesis) rather than as a small multiple.
+#
 # The "CAPEX onshore insulation" row is a memo-only breakout of the total,
 # not one of the two summed here -- and its own % deviation is undefined
 # for every scenario (both benchmark runs predate the insulation feature,
@@ -390,12 +395,97 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
     print(f"Saved {pdf_path.resolve()}")
 
 
+# (row, filename slug, line color) for every CAPEX_DETAIL_ROWS component,
+# in the same order as CAPEX_DETAIL_ROWS. Filename slugs are independent
+# of the row label text, so relabeling a row doesn't rename its file.
+COMPONENT_SLUGS = [
+    ("CAPEX onshore pipeline (total, incl. insulation)", "capex_component_onshore_total"),
+    ("CAPEX onshore insulation", "capex_component_onshore_insulation"),
+    ("CAPEX onshore pipeline without insulation", "capex_component_onshore_without_insulation"),
+    ("CAPEX booster initial", "capex_component_booster_initial"),
+    ("CAPEX booster additional", "capex_component_booster_additional"),
+]
+
+
+def plot_capex_detail_components(capex_detail, out_dir: Path = OUT_DIR):
+    """One standalone figure per CAPEX_DETAIL_ROWS component (5 total,
+    including "CAPEX onshore insulation" -- omitted from
+    plot_capex_detail_relative()/the % panels of plot_capex_detail_trend()
+    for the reason given at INSULATION_ROW, but included here on its own
+    absolute-M€ axis like that trend chart's fifth panel)."""
+    sc_values, sc_pct = build_cost_category_vs_benchmark(
+        capex_detail, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
+    liq_values, liq_pct = build_cost_category_vs_benchmark(
+        capex_detail, LIQUID_SCENARIOS, LIQUID_BENCHMARK)
+
+    sc_x = [_surcharge_value(sk) for sk in SUPERCRITICAL_SCENARIOS]
+    liq_x = [_surcharge_value(sk) for sk in LIQUID_SCENARIOS]
+    all_x = sorted(set(sc_x) | set(liq_x))
+
+    for row, slug in COMPONENT_SLUGS:
+        is_insulation = row == INSULATION_ROW
+        if is_insulation:
+            sc_y = [capex_detail[sk][row] for sk in SUPERCRITICAL_SCENARIOS]
+            liq_y = [capex_detail[sk][row] for sk in LIQUID_SCENARIOS]
+        else:
+            sc_y = [sc_pct[sk][row] for sk in SUPERCRITICAL_SCENARIOS]
+            liq_y = [liq_pct[sk][row] for sk in LIQUID_SCENARIOS]
+
+        fig, ax = plt.subplots(figsize=(8, 5.5))
+        fig.subplots_adjust(left=0.13, right=0.97, top=0.85, bottom=0.24)
+
+        ax.plot(sc_x, sc_y, marker="o", color=COLOR_SUPERCRITICAL, linewidth=2.2, markersize=6.5,
+                label="Supercritical", zorder=3)
+        ax.plot(liq_x, liq_y, marker="o", color=COLOR_LIQUID, linewidth=2.2, markersize=6.5,
+                label="Liquid", zorder=3)
+        ax.axhline(0, color=AXIS_COLOR, linewidth=1.0, zorder=2)
+
+        if is_insulation:
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+            ax.set_ylabel("CAPEX [M€]")
+            title = f"{row} (absolute, not vs. benchmark†)"
+        else:
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}%"))
+            ax.set_ylabel("Deviation from phase benchmark [%]")
+            title = row
+
+        ax.set_xlabel("Insulation surcharge [%]")
+        ax.set_xticks(all_x)
+        ax.grid(color=GRID_COLOR, linewidth=0.8, zorder=0)
+        ax.set_axisbelow(True)
+        for spine in ("top", "right"):
+            ax.spines[spine].set_visible(False)
+        ax.spines["left"].set_color(AXIS_COLOR)
+        ax.spines["bottom"].set_color(AXIS_COLOR)
+
+        fig.suptitle(title, fontsize=12.5, fontweight="bold", y=0.965)
+        ax.legend(loc="best", frameon=False, fontsize=9.5)
+
+        footnote = (
+            "0% surcharge = noins / liq_noins (still part of the sweep). Liquid sweep stops at +60%."
+            if not is_insulation else
+            "0% surcharge = noins / liq_noins (still part of the sweep). Liquid sweep stops at +60%. "
+            "† both benchmark runs predate the insulation feature (insulation CAPEX = 0 there), so "
+            "this row's deviation from benchmark is undefined -- its absolute value is shown instead."
+        )
+        fig.text(0.01, 0.02, footnote, fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom")
+
+        png_path = out_dir / f"{slug}.png"
+        pdf_path = out_dir / f"{slug}.pdf"
+        fig.savefig(png_path, dpi=300, bbox_inches="tight")
+        fig.savefig(pdf_path, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved {png_path.resolve()}")
+        print(f"Saved {pdf_path.resolve()}")
+
+
 def main(out_dir: Path = OUT_DIR):
     out_dir.mkdir(parents=True, exist_ok=True)
     capex_detail = build_capex_detail()
     plot_capex_detail_absolute(capex_detail, out_dir)
     plot_capex_detail_relative(capex_detail, out_dir)
     plot_capex_detail_trend(capex_detail, out_dir)
+    plot_capex_detail_components(capex_detail, out_dir)
 
 
 if __name__ == "__main__":
