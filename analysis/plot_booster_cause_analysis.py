@@ -167,7 +167,7 @@ def _plot_by_scenario(boostcount: pd.DataFrame, bm_totals: dict, out_dir: Path):
                        edgecolor="white", linewidth=0.6, zorder=3)
             bottom += v
 
-    ax.set_ylabel("Installed boosters [count]")
+    ax.set_ylabel("Installed boosters")
     _style_axes(ax)
 
     xs = [positions[sk] for sk in all_scenarios]
