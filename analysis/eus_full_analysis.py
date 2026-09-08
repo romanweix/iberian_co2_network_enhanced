@@ -13,7 +13,7 @@
 # scenario's insulated pipes.
 #
 # Usage (from the repo root):
-#   python -m analysis.eus_full_analysis
+#   python3 -m analysis.eus_full_analysis
 
 import math
 import re
@@ -52,7 +52,7 @@ BENCHMARK_PHASE_LABELS = {
 # sweep scenarios and their benchmark (dense-phase network run).
 SUPERCRITICAL_SCENARIOS = ["noins", "ins20", "ins40", "ins60", "ins80", "ins100", "ins150"]
 SUPERCRITICAL_BENCHMARK = "bm_sco2"
-LIQUID_SCENARIOS = ["liq_noins", "liq_ins20", "liq_ins40", "liq_ins60", "liq_ins80", "liq_ins100"]
+LIQUID_SCENARIOS = ["liq_noins", "liq_ins20", "liq_ins40", "liq_ins60", "liq_ins80", "liq_ins100", "liq_ins150"]
 LIQUID_BENCHMARK = "bm_dense_2"
 
 # Model constants from iberian_co2_network/data.py's scenario data dict
