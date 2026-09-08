@@ -119,6 +119,23 @@ CATEGORY_ORDER = [
     "Penalty for uncaptured emissions (excluded from Gross/Net)",
 ]
 
+# Finer-grained CAPEX view for the "CAPEX detail" tabs: unlike
+# build_cost_category_breakdown()'s Pipeline/Boosting CAPEX buckets (which
+# sum onshore+offshore and initial+additional together), this keeps the
+# onshore pipe CAPEX split into its insulation-only portion and the
+# insulation-free remainder, and keeps the booster CAPEX split into its
+# initial-build and additional (retrofit) components rather than summed --
+# per user request, to see which piece drives a scenario's deviation from
+# its phase benchmark. Values are in M€ (the {util} - Cost breakdown sheet's
+# own unit), not converted to Bn€ like the cost-category bucket table.
+CAPEX_DETAIL_ROWS = [
+    "CAPEX onshore pipeline (total, incl. insulation)",
+    "CAPEX onshore insulation",
+    "CAPEX onshore pipeline without insulation",
+    "CAPEX booster initial",
+    "CAPEX booster additional",
+]
+
 
 def scenario_files():
     return sorted(RESULTS_DIR.glob("*_stochastic_results_theta_*.xlsx"))
@@ -173,6 +190,34 @@ def build_cost_category_breakdown() -> pd.DataFrame:
 
     df = pd.DataFrame(rows).reindex(CATEGORY_ORDER)
     df.index.name = "Cost category [Bn€]"
+    return df
+
+
+def build_capex_detail() -> pd.DataFrame:
+    """Onshore-pipe and booster CAPEX detail (see CAPEX_DETAIL_ROWS), one
+    row per detail item x one column per scenario, in M€. "CAPEX onshore
+    pipeline (total, incl. insulation)" and "CAPEX onshore insulation" are
+    read directly off the {util} - Cost breakdown sheet (the latter is a
+    memo-only breakout of the former, not an addition -- see MEMO_ONLY_ROWS
+    in compare_scenarios.py); "CAPEX onshore pipeline without insulation" is
+    the difference of those two, computed here rather than exported by the
+    model. The two benchmark runs (bm_sco2, bm_dense_2) predate the
+    insulation feature and have no insulation-only row, so their insulation
+    value is 0 and "without insulation" equals the total, not a NaN."""
+    rows = {}
+    for f, scenario_key, phase_label, surcharge_pct in labeled_scenarios():
+        cost_series = _load_cost_breakdown(f, UTIL)
+        onshore_total = cost_series.get("CAPEX onshore pipe", 0.0)
+        onshore_insulation = cost_series.get("CAPEX onshore pipe (insulation only)", 0.0)
+        rows[scenario_key] = {
+            "CAPEX onshore pipeline (total, incl. insulation)": onshore_total,
+            "CAPEX onshore insulation": onshore_insulation,
+            "CAPEX onshore pipeline without insulation": onshore_total - onshore_insulation,
+            "CAPEX booster initial": cost_series.get("CAPEX initial boosting stations", 0.0),
+            "CAPEX booster additional": cost_series.get("CAPEX additional boosting stations", 0.0),
+        }
+    df = pd.DataFrame(rows).reindex(CAPEX_DETAIL_ROWS)
+    df.index.name = "CAPEX detail [M€]"
     return df
 
 
@@ -587,6 +632,18 @@ def main():
     liq_values = liq_values.rename(columns={LIQUID_BENCHMARK: f"{LIQUID_BENCHMARK} (benchmark)"})
     liq_pct = liq_pct.rename(columns={LIQUID_BENCHMARK: f"{LIQUID_BENCHMARK} (benchmark)"})
 
+    capex_detail = build_capex_detail()
+
+    capex_sc_values, capex_sc_pct = build_cost_category_vs_benchmark(
+        capex_detail, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
+    capex_sc_values = capex_sc_values.rename(columns={SUPERCRITICAL_BENCHMARK: f"{SUPERCRITICAL_BENCHMARK} (benchmark)"})
+    capex_sc_pct = capex_sc_pct.rename(columns={SUPERCRITICAL_BENCHMARK: f"{SUPERCRITICAL_BENCHMARK} (benchmark)"})
+
+    capex_liq_values, capex_liq_pct = build_cost_category_vs_benchmark(
+        capex_detail, LIQUID_SCENARIOS, LIQUID_BENCHMARK)
+    capex_liq_values = capex_liq_values.rename(columns={LIQUID_BENCHMARK: f"{LIQUID_BENCHMARK} (benchmark)"})
+    capex_liq_pct = capex_liq_pct.rename(columns={LIQUID_BENCHMARK: f"{LIQUID_BENCHMARK} (benchmark)"})
+
     booster_detail, booster_count, booster_boostcount, booster_excluded = build_booster_reasons()
     booster_note = pd.DataFrame({"Note": [
         "Reason is derived from the pipe's own Pressure/Temperature at critical point and "
@@ -644,6 +701,15 @@ def main():
         liq_layout = _write_blocks(writer, "Cost category - liquid", [
             ("Cost category breakdown [Bn€] -- liquid scenarios, benchmark = bm_dense_2", liq_values, True),
             ("% deviation vs. dense-phase benchmark (bm_dense_2)", liq_pct, True),
+        ])
+
+        capex_sc_layout = _write_blocks(writer, "CAPEX detail - supercritical", [
+            ("CAPEX detail [M€] -- supercritical scenarios, benchmark = bm_sco2", capex_sc_values, True),
+            ("% deviation vs. supercritical benchmark (bm_sco2)", capex_sc_pct, True),
+        ])
+        capex_liq_layout = _write_blocks(writer, "CAPEX detail - liquid", [
+            ("CAPEX detail [M€] -- liquid scenarios, benchmark = bm_dense_2", capex_liq_values, True),
+            ("% deviation vs. dense-phase benchmark (bm_dense_2)", capex_liq_pct, True),
         ])
 
         booster_layout = _write_blocks(writer, "Booster reason", [
@@ -710,6 +776,16 @@ def main():
     _style_blocks(ws, liq_layout, ws.max_column)
     _bold_rows_by_label(ws, {"Gross cost (Bn€)", "Net cost (Bn€)"})
     _percent_format_block(ws, liq_layout[1], len(liq_pct), ws.max_column)
+
+    ws = wb["CAPEX detail - supercritical"]
+    _style_blocks(ws, capex_sc_layout, ws.max_column)
+    _bold_rows_by_label(ws, {"CAPEX onshore pipeline (total, incl. insulation)"})
+    _percent_format_block(ws, capex_sc_layout[1], len(capex_sc_pct), ws.max_column)
+
+    ws = wb["CAPEX detail - liquid"]
+    _style_blocks(ws, capex_liq_layout, ws.max_column)
+    _bold_rows_by_label(ws, {"CAPEX onshore pipeline (total, incl. insulation)"})
+    _percent_format_block(ws, capex_liq_layout[1], len(capex_liq_pct), ws.max_column)
 
     ws = wb["Booster reason"]
     _style_blocks(ws, booster_layout, ws.max_column)
