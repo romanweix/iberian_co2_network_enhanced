@@ -84,7 +84,7 @@ plt.rcParams.update({
 SUPERCRITICAL_REFERENCE = SUPERCRITICAL_SCENARIOS[0]  # "noins"
 LIQUID_REFERENCE = LIQUID_SCENARIOS[0]                # "liq_noins"
 SUPERCRITICAL_SWEEP = SUPERCRITICAL_SCENARIOS[1:]     # ins20 .. ins150
-LIQUID_SWEEP = LIQUID_SCENARIOS[1:]                   # liq_ins20 .. liq_ins60
+LIQUID_SWEEP = LIQUID_SCENARIOS[1:]                   # liq_ins20 .. liq_ins150
 
 # Muted, print-friendly categorical palette (blue/red/green) instead of the
 # saturated Okabe-Ito set used elsewhere -- a neutral gray stands in as a
@@ -131,6 +131,7 @@ def _style_axes(ax, grid_axis="both"):
 # runs (bm_sco2 / bm_dense_2) are never plotted here, so they have no entry.
 SCENARIO_ABBR = {
     "liq_noins": "LP-U", "liq_ins20": "LP-I20", "liq_ins40": "LP-I40", "liq_ins60": "LP-I60",
+    "liq_ins80": "LP-I80", "liq_ins100": "LP-I100", "liq_ins150": "LP-I150",
     "noins": "SC-U", "ins20": "SC-I20", "ins40": "SC-I40",
     "ins60": "SC-I60", "ins80": "SC-I80", "ins100": "SC-I100", "ins150": "SC-I150",
 }
@@ -403,7 +404,7 @@ def plot_capex_detail_trend(capex_detail, out_dir: Path = OUT_DIR):
     fig.text(
         0.01, 0.02,
         "0% surcharge = SC-U / LP-U, this module's reference scenario (0% deviation by "
-        "definition in the four left/center panels). Liquid sweep stops at +60%. "
+        "definition in the four left/center panels). "
         "† SC-U/LP-U have 0 insulation CAPEX by definition (no insulation), so this row's "
         "deviation from the reference is undefined -- its absolute value is shown instead.",
         fontsize=6.8, color=TEXT_MUTED, ha="left", va="bottom",
@@ -480,9 +481,9 @@ def plot_capex_detail_components(capex_detail, out_dir: Path = OUT_DIR):
         ax.legend(loc="best", frameon=False, fontsize=9.5)
 
         footnote = (
-            "0% surcharge = SC-U / LP-U, this figure's reference scenario. Liquid sweep stops at +60%."
+            "0% surcharge = SC-U / LP-U, this figure's reference scenario."
             if not is_insulation else
-            "0% surcharge = SC-U / LP-U, this figure's reference scenario. Liquid sweep stops at +60%. "
+            "0% surcharge = SC-U / LP-U, this figure's reference scenario. "
             "† SC-U/LP-U have 0 insulation CAPEX by definition (no insulation), so this row's "
             "deviation from the reference is undefined -- its absolute value is shown instead."
         )
