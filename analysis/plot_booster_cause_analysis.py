@@ -88,12 +88,13 @@ REASON_COLORS = {
 # per-pipe pressure/temperature/insulation data), so its total booster count
 # is read separately, straight from the exported results_data workbook.
 SUPERCRITICAL_ORDER = ["SCBM", "SCU", "SCI20", "SCI40", "SCI60", "SCI80", "SCI100", "SCI150"]
-LIQUID_ORDER = ["LPBM", "LPU", "LPI20", "LPI40", "LPI60"]
+LIQUID_ORDER = ["LPBM", "LPU", "LPI20", "LPI40", "LPI60", "LPI80", "LPI100", "LPI150"]
 
 SCENARIO_LABELS = {
     "SCBM": "SC-BM", "SCU": "SC-U", "SCI20": "SC-I20", "SCI40": "SC-I40",
     "SCI60": "SC-I60", "SCI80": "SC-I80", "SCI100": "SC-I100", "SCI150": "SC-I150",
     "LPBM": "LP-BM", "LPU": "LP-U", "LPI20": "LP-I20", "LPI40": "LP-I40", "LPI60": "LP-I60",
+    "LPI80": "LP-I80", "LPI100": "LP-I100", "LPI150": "LP-I150",
 }
 
 # BM total-booster source: (results_data filename stem, scenario code)
