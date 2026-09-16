@@ -91,7 +91,7 @@ for idx, row in df.iterrows():
     # Temperaturkarte laden
     # ==========================================================
 
-    temp_ds = xr.open_dataset("era5_january_mean_last5years.nc",
+    temp_ds = xr.open_dataset("era5_july_mean_last5years.nc",
                                   engine="netcdf4")
 
     # Variable automatisch finden
@@ -207,13 +207,13 @@ for idx, row in df.iterrows():
 
     # 3. Stoffwerte & Startbedingungen
     p_start = 150e5     # 150 bar
-    t_start = 25        # 25 °C
+    t_start = 45        # 25 °C
     u_values = [0.43, 2.0] 
 
     epsilon = 4.5e-5  # Roughness of the pipe in meters (for carbon steel)
 
     # statisches Dichte-Modell Pau
-    temp_static = 298.15  # Temperature in Kelvin (25 °C)
+    temp_static = 318.15  # Temperature in Kelvin (25 °C)
     pressure_static = 125e5  # Pressure in Pa (125 bar)    
 
     # 4. Simulation
@@ -245,8 +245,8 @@ for idx, row in df.iterrows():
                     T_kelvin = t_in[j] + 273.15
                     P_pascal = p[j]
 
-                    if T_kelvin < (15 + 273.15):
-                        T_kelvin = 15 + 273.15
+                    if T_kelvin < (32 + 273.15):
+                        T_kelvin = 32 + 273.15
                     
                     if P_pascal < 100e5:
                         P_pascal = 100e5
@@ -332,7 +332,7 @@ src.close()
 
 import pandas as pd
 
-file_path = "sim_pipeline_candidates_dense.xlsx"
+file_path = "sim_pipeline_candidates_supercritical_july.xlsx"
 
 # deine berechneten Ergebnisse
 df_results = pd.DataFrame(cricital_points)

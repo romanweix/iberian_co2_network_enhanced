@@ -37,9 +37,9 @@ AREA = [
     45     # Ost
 ]
 
-DOWNLOAD_FILE = "era5_daily_january_europe.nc"
-OUTPUT_FILE = "era5_january_mean_last5years.nc"
-FIGURE_FILE = "era5_january_heatmap.png"
+DOWNLOAD_FILE = "era5_daily_july_europe.nc"
+OUTPUT_FILE = "era5_july_mean_last5years.nc"
+FIGURE_FILE = "era5_july_heatmap.png"
 
 
 # ==========================================================
@@ -76,7 +76,7 @@ if not os.path.exists(DOWNLOAD_FILE):
                 "2m_temperature"
             ],
             "year": years,
-            "month": "01",
+            "month": "07",
             "day": [
                 f"{d:02d}"
                 for d in range(1, 32)

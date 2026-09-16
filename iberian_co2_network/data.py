@@ -18,18 +18,26 @@ INTEREST_RATE = 0.08 # interest rate used for all the present value calculations
 
 SCO2_PHASE = False # supercritical phase (True), liquid phase (False)
 
+AMBIENT_TEMPERATURE_CONDITIONS_COLD = False # ambient temperature January (True), July (False)
+
 if SCO2_PHASE == True:
     SIM_T_START_C = 45.0
     THETA_EMIT = 45.0
     THETA_MIN = 32.0
-    SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates.xlsx'
+    if AMBIENT_TEMPERATURE_CONDITIONS_COLD == True:
+        SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates.xlsx'
+    else:
+        SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates_supercritical_july.xlsx'
     CO2_DENSITY = 700  # kg/m³, approximate density of CO₂ at transport conditions
     FRICTION_TEMP = 308.15 # 35°C
 else:
     SIM_T_START_C = 25.0
     THETA_EMIT = 25.0
     THETA_MIN = 15.0
-    SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates_liquide.xlsx'
+    if AMBIENT_TEMPERATURE_CONDITIONS_COLD == True:
+        SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates_liquide.xlsx'
+    else:
+        SIM_PIPELINE_CANDIDATES_XLSX = 'data/sim_pipeline_candidates_liquid_july.xlsx'
     CO2_DENSITY = 850  # kg/m³, approximate density of CO₂ at transport conditions
     FRICTION_TEMP = 293.15 # 20°C
 
@@ -503,7 +511,7 @@ COST_PER_INCH_EUR = 40 # in €/m
 cost_per_inch = COST_PER_INCH_EUR * 1e3 / 1e6 # in M€/km
 
 # Surcharge on COST_PER_INCH_EUR for insulated onshore pipelines, in %
-ONSHORE_INSULATION_SURCHARGE_PCT = 100 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
+ONSHORE_INSULATION_SURCHARGE_PCT = 20 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
 
 # complete set of diameters - 39 possible options
 # diameter_inch_str = [

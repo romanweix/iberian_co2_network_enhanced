@@ -37,9 +37,9 @@ AREA = [
     45     # Ost
 ]
 
-DOWNLOAD_FILE = "era5_daily_january_europe.nc"
-OUTPUT_FILE = "era5_january_mean_last5years.nc"
-FIGURE_FILE = "era5_january_heatmap.png"
+DOWNLOAD_FILE = "era5_daily_july_europe.nc"
+OUTPUT_FILE = "era5_july_mean_last5years.nc"
+FIGURE_FILE = "era5_july_heatmap.png"
 
 
 # ==========================================================
@@ -207,12 +207,12 @@ cbar = plt.colorbar(
 )
 
 cbar.set_label(
-    "Mittlere Januartemperatur [°C]"
+    "Mittlere Julitemperatur [°C]"
 )
 
 
 plt.title(
-    "Europa: mittlere Januartemperatur\n"
+    "Europa: mittlere Julitemperatur\n"
     f"ERA5 Mittel {years[-1]}–{years[0]}"
 )
 
