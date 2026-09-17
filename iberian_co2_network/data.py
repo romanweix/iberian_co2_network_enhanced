@@ -16,7 +16,7 @@ import ast
 
 INTEREST_RATE = 0.08 # interest rate used for all the present value calculations
 
-SCO2_PHASE = False # supercritical phase (True), liquid phase (False)
+SCO2_PHASE = True # supercritical phase (True), liquid phase (False)
 
 AMBIENT_TEMPERATURE_CONDITIONS_COLD = False # ambient temperature January (True), July (False)
 
@@ -511,7 +511,7 @@ COST_PER_INCH_EUR = 40 # in €/m
 cost_per_inch = COST_PER_INCH_EUR * 1e3 / 1e6 # in M€/km
 
 # Surcharge on COST_PER_INCH_EUR for insulated onshore pipelines, in %
-ONSHORE_INSULATION_SURCHARGE_PCT = 150 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
+ONSHORE_INSULATION_SURCHARGE_PCT = 20 # e.g. 20 -> insulated pipe costs 20% more per inch than uninsulated
 
 # complete set of diameters - 39 possible options
 # diameter_inch_str = [
