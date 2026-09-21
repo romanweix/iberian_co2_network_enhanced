@@ -36,7 +36,7 @@
 # every plot here.
 #
 # Usage (from the repo root):
-#   python -m analysis.plot_final_network_maps
+#   python3 -m analysis.plot_final_network_maps
 
 import sys
 from collections import defaultdict

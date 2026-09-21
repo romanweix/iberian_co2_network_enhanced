@@ -64,8 +64,10 @@ if activate_temp:
 else:
     subplots_nr = 2
     height_ratios = [2, 1]
-fig, axes = plt.subplots(subplots_nr, len(u_values), figsize=(18, 14), gridspec_kw={'height_ratios': height_ratios}, sharex=True)
+# NUR EINE Spalte: well & poorly insulated werden übereinandergelegt (solid vs. dashed)
+fig, axes = plt.subplots(subplots_nr, 1, figsize=(9, 14), gridspec_kw={'height_ratios': height_ratios}, sharex=True)
 colors = plt.cm.plasma(np.linspace(0, 0.8, len(diameters_m)))
+linestyles = {0.43: '-', 2.0: '--'}   # well insulated = solid, poorly insulated = dashed
 
 # Konsolen-Header formatieren (dp = Druckänderung, dT = Temperaturänderung)
 header = f"{'U-Wert':<7} | {'D (m)':<5} | {'x_End':<5} | {'dp_End':<7} | {'dT_End':<7} | {'x_dpmax':<7} | {'dp_max':<7} | {'dT_dpmax':<8} | {'x_Tmin':<6} | {'dp_Tmin':<7} | {'dT_Tmin':<7}"
@@ -141,44 +143,65 @@ for col, u_val in enumerate(u_values):
         # Ausgabe in der Konsole
         print(f"{u_val:<7} | {d:<5.1f} | {x_end_km:<5.0f} | {dp_ende_bar:<7.1f} | {dT_ende_c:<7.1f} | {x_dpmax_km:<7.1f} | {dp_max_bar:<7.1f} | {dT_dpmax_c:<8.1f} | {x_tmin_km:<6.1f} | {dp_tmin_bar:<7.1f} | {dT_tmin_c:<7.1f}")
 
-        # Plots (bleiben absolut)
-        axes[0, col].plot(x/1000, p/1e5, color=colors[i], label=f"D={d}m")
-        axes[0, col].plot(x/1000, p/1e5, color=colors[i])
+        # Plots: beide U-Werte übereinander in derselben Achse.
+        # well insulated (0.43) = durchgezogen, poorly insulated (2.0) = strichliert.
+        ls = linestyles[u_val]
+        axes[0].plot(x/1000, p/1e5, color=colors[i], linestyle=ls)
         if activate_temp:
-            axes[1, col].plot(x/1000, t_in, color=colors[i])
-    
-    # --- Beschriftung der Spalten ---
-    if u_val == 0.43:
-        ins_text = "well insulated"
-    if u_val == 2:
-        ins_text = "poorly insulated"
-    axes[0, col].set_title(f"\n{ins_text}", fontsize=14, fontweight='bold')
-    # axes[0, col].set_title(f"\ninsulation U = {u_val} W/m²K", fontsize=14, fontweight='bold')
+            axes[1].plot(x/1000, t_in, color=colors[i], linestyle=ls)
 
-    # --- Subplot 1: Druck ---
-    # axes[0, col].axhline(73.8, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 73.8 bar")
-    axes[0, col].grid(True, alpha=0.2)
-    if col == 0: axes[0, col].set_ylabel("\npressure [bar]")
-    axes[0, col].legend(fontsize='x-small')
+    # --- Subplot 2: Umgebungstemperatur (nur einmal nötig, ist U-unabhängig) ---
+    if activate_temp and u_val == u_values[0]:
+        axes[1].plot(x/1000, t_ext_profile, 'k--', alpha=0.4)
 
-    # --- Subplot 2: Temperatur ---
-    if activate_temp:
-        axes[1, col].plot(x/1000, t_ext_profile, 'k--', alpha=0.4, label="ambient temp")
-        #axes[1, col].axhline(31.1, color='red', linestyle='--', alpha=0.5)
-        #axes[1, col].axhline(31.1, color='red', linestyle='--', alpha=0.5, label="supercrit threshold = 31.1°C")
-        #axes[1, col].axhline(10.0, color='red', linestyle='-', alpha=0.5, label="ice threshold = 10.0°C")
-        axes[1, col].grid(True, alpha=0.2)
-        if col == 0: axes[1, col].set_ylabel("\ntemperature [°C]")
-        axes[1, col].legend(fontsize='x-small')
-        height_subplot_row = 2
-    else:
-        height_subplot_row = 1
-    # --- Subplot 3: Höhe ---
-    axes[height_subplot_row, col].fill_between(x/1000, h, color='brown', alpha=0.2)
-    axes[height_subplot_row, col].grid(True, alpha=0.2)
-    if col == 0: axes[height_subplot_row, col].set_ylabel("\ntopology [m]")
-    axes[height_subplot_row, col].set_xlabel("distance [km]\n\n")
+# --- Subplot 1: Druck ---
+axes[0].grid(True, alpha=0.2)
+axes[0].set_ylabel("\npressure [bar]", fontsize=16)
+axes[0].set_title("\nwell insulated vs. poorly insulated\n", fontsize=18, fontweight='bold')
 
+# --- Subplot 2: Temperatur ---
+if activate_temp:
+    axes[1].grid(True, alpha=0.2)
+    axes[1].set_ylabel("\ntemperature [°C]", fontsize=16)
+    height_subplot_row = 2
+else:
+    height_subplot_row = 1
 
-plt.tight_layout()
+# --- Subplot 3: Höhe (unabhängig von U, nur einmal) ---
+axes[height_subplot_row].fill_between(x/1000, h, color='brown', alpha=0.2)
+axes[height_subplot_row].grid(True, alpha=0.2)
+axes[height_subplot_row].set_ylabel("elevation profil [m]", fontsize=16)
+axes[height_subplot_row].set_xlabel("distance [km]\n\n", fontsize=16)
+
+# --- Zentrale, horizontale Legende: Durchmesser (Farbe) + ambient temp + Isolationsart (Linienstil) ---
+from matplotlib.lines import Line2D
+
+diameter_handles = [
+    Line2D([0], [0], color=colors[i], lw=2, label=f"D={d:.2f}m")
+    for i, d in enumerate(diameters_m)
+]
+ambient_handle = [Line2D([0], [0], color='k', lw=1.2, alpha=0.4, linestyle='--', label="ambient temp")]
+style_handles = [
+    Line2D([0], [0], color='0.3', lw=2, linestyle='-', label="well insulated"),
+    Line2D([0], [0], color='0.3', lw=2, linestyle='--', label="poorly insulated"),
+]
+
+rest_handles = ambient_handle + style_handles
+
+# WICHTIG: verschränken statt aneinanderhängen, da matplotlib die Legende
+# spaltenweise (nicht zeilenweise) befüllt
+handles = [h for pair in zip(diameter_handles, rest_handles) for h in pair]
+labels = [h.get_label() for h in handles]
+
+fig.legend(
+    handles, labels,
+    loc='lower center',
+    bbox_to_anchor=(0.5, 1.02),
+    ncol=len(diameter_handles),   # = 3
+    fontsize='x-large',
+    frameon=False,
+)
+
+plt.tight_layout(rect=[0, 0.03, 1, 1])  # unten Platz für die Legende lassen
+plt.savefig("sim_output.png", dpi=150, bbox_inches='tight')
 plt.show()
