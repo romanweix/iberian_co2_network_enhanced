@@ -35,7 +35,7 @@ from iberian_co2_network.developed_plots import add_nodes, booster_patch, _offse
 from analysis.plot_final_network_maps import (  # noqa: E402
     CHECKPOINT_DIR, OUT_DIR, YEAR, SCENARIO, CANDIDATE_COLOR,
     _diameter_cmap, _diameter_norm, _diameter_color,
-    draw_basemap, draw_candidate_topology,
+    draw_basemap, draw_candidate_topology, decode_scenario_label,
 )
 
 LEGACY_SCENARIOS = ["LPBM", "SCBM"]
@@ -183,10 +183,12 @@ def plot_scenario_legacy(checkpoint_path: Path, out_dir: Path) -> bool:
     cbar_d.set_label("Diameter [inch]", fontsize=8)
     cbar_d.ax.tick_params(labelsize=7)
 
-    ax.text(0.02, 0.98, scenario_key, transform=ax.transAxes, ha="left", va="top",
-            fontsize=20, fontweight="bold", color="black",
+    scenario_label = decode_scenario_label(scenario_key)
+    badge_text = scenario_label.replace(", ", ",\n") if ", " in scenario_label else scenario_label
+    ax.text(0.02, 1.09, badge_text, transform=ax.transAxes, ha="left", va="top",
+            fontsize=15, fontweight="bold", color="black", linespacing=1.3, clip_on=False,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="none", alpha=0.75), zorder=10)
-    fig.suptitle(f"Final network ({YEAR}) -- scenario {scenario_key}", fontsize=11, y=0.97)
+    #fig.suptitle(f"Final network ({YEAR}) -- {scenario_label} ({scenario_key})", fontsize=11, y=0.97)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     outpath = out_dir / f"{scenario_key}_final_network_{YEAR}.png"

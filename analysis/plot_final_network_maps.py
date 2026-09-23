@@ -36,7 +36,7 @@
 # every plot here.
 #
 # Usage (from the repo root):
-#   python3 -m analysis.plot_final_network_maps
+#   python -m analysis.plot_final_network_maps
 
 import sys
 from collections import defaultdict
@@ -62,6 +62,30 @@ CHECKPOINT_DIR = Path("analysis/model_results")
 OUT_DIR = Path("analysis/results_plot_final")
 YEAR = 2050
 SCENARIO = "base_utilization"  # EUS: the base-case utilization scenario used throughout
+
+# Scenario-code abbreviations, spelled out for plot labels. Codes are
+# <phase prefix><modifier suffix>, e.g. "SCI40" = supercritical phase,
+# +40% insulation surcharge; "LPBM" = liquid phase, legacy benchmark.
+_PHASE_LABELS = {"SC": "Supercritical Phase", "LP": "Liquid Phase"}
+
+
+def decode_scenario_label(scenario_key: str) -> str:
+    """Expand a scenario code like 'SCI40' into 'Supercritical Phase,
+    +40% Thermal Insulation Surcharge' for display; falls back to the raw
+    code if it doesn't match the known <phase><modifier> pattern."""
+    phase = next((label for prefix, label in _PHASE_LABELS.items() if scenario_key.startswith(prefix)), None)
+    if phase is None:
+        return scenario_key
+    suffix = scenario_key[2:]
+    if suffix == "BM":
+        modifier = "Benchmark"
+    elif suffix == "U":
+        modifier = "No Thermal Insulation"
+    elif suffix.startswith("I") and suffix[1:].isdigit():
+        modifier = f"+{suffix[1:]}% Thermal Insulation Surcharge"
+    else:
+        return scenario_key
+    return f"{phase}, {modifier}"
 
 # Map extent (lon/lat), fixed across every scenario so the plots are directly
 # comparable; wide enough to frame mainland Iberia + Balearic Islands with a
@@ -298,11 +322,17 @@ def plot_scenario(checkpoint_path: Path, out_dir: Path) -> bool:
 
     # Scenario name (top-left) in place of developed_plots.py's small year
     # badge -- year is fixed at 2050 for every plot here, so it's stated
-    # once in the figure title instead of a per-plot badge.
-    ax.text(0.02, 0.98, scenario_key, transform=ax.transAxes, ha="left", va="top",
-            fontsize=20, fontweight="bold", color="black",
+    # once in the figure title instead of a per-plot badge. Shown spelled
+    # out (decode_scenario_label()), wrapped onto two lines at the comma
+    # so the longer phase+modifier text doesn't run off the map, with the
+    # raw code alongside in the suptitle for traceability back to the
+    # checkpoint filename.
+    scenario_label = decode_scenario_label(scenario_key)
+    badge_text = scenario_label.replace(", ", ",\n") if ", " in scenario_label else scenario_label
+    ax.text(0.02, 1.09, badge_text, transform=ax.transAxes, ha="left", va="top",
+            fontsize=15, fontweight="bold", color="black", linespacing=1.3, clip_on=False,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="none", alpha=0.75), zorder=10)
-    fig.suptitle(f"Final network ({YEAR}) -- scenario {scenario_key}", fontsize=11, y=0.97)
+    #fig.suptitle(f"Final network ({YEAR}) -- {scenario_label} ({scenario_key})", fontsize=11, y=0.97)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     outpath = out_dir / f"{scenario_key}_final_network_{YEAR}.png"
