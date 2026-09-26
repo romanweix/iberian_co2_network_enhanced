@@ -7,7 +7,8 @@
 # a condensed cost-category view (overall, and vs. each phase's benchmark
 # run), the network build-out timeline, an installed-diameter distribution
 # pivot, cost-efficiency metrics (EUR per km built, EUR per tonne of CO2
-# stored), why boosters were needed (pressure vs. temperature), the total
+# stored), gross and net cost per tonne of CO2 transported (stored +
+# utilized), why boosters were needed (pressure vs. temperature), the total
 # pipeline volume (pipe itself, no insulation) implied by each scenario's
 # installed pipes, and the insulation shell volume implied by each
 # scenario's insulated pipes.
@@ -286,6 +287,47 @@ def build_cost_efficiency(kpi_summary: pd.DataFrame) -> pd.DataFrame:
             "Total CO2 stored [Mt]": mt,
             "Net cost per km [k€/km]": (net_cost_bn * 1e6 / length_km) if length_km else None,
             "Net cost per tCO2 stored [€/t]": (net_cost_bn * 1000.0 / mt) if mt else None,
+        })
+    return pd.DataFrame(rows)
+
+
+def build_cost_per_transported_co2(kpi_summary: pd.DataFrame) -> pd.DataFrame:
+    """Gross and net cost per tonne of CO2 transported through the network.
+    Transported CO2 = CO2 stored (sum over all sinks of Initial - Final
+    capacity, i.e. qstore summed over the horizon, as in
+    build_cost_efficiency) + CO2 sold for utilization (sum over all
+    utilization nodes and years of the {util} - Utilization evolution
+    sheet, i.e. qsale summed over the horizon) -- everything that enters
+    the network and is delivered to a sink or a utilization node. Gross /
+    Net cost are the KPI summary's (capture cost and the uncaptured-
+    emissions penalty excluded; Net = Gross - CO2 sales revenue)."""
+    stored_mt, utilized_mt = {}, {}
+    for f, scenario_key, phase_label, surcharge_pct in labeled_scenarios():
+        sinks = pd.read_excel(f, sheet_name=f"{UTIL} - Sinks capacity evolution")
+        stored_mt[scenario_key] = (sinks["Initial capacity [Mt]"] - sinks["Final capacity [Mt]"]).sum()
+        util = pd.read_excel(f, sheet_name=f"{UTIL} - Utilization evolution")
+        year_cols = [c for c in util.columns if re.fullmatch(r"\d{4} utilization \[Mt\]", str(c))]
+        utilized_mt[scenario_key] = util[year_cols].sum().sum()
+
+    rows = []
+    for _, r in kpi_summary.iterrows():
+        scenario_key = r["Scenario"]
+        stored = stored_mt.get(scenario_key, 0.0)
+        utilized = utilized_mt.get(scenario_key, 0.0)
+        transported = stored + utilized
+        gross_bn, net_bn = r["Gross cost [Bn€]"], r["Net cost [Bn€]"]
+        rows.append({
+            "Scenario": scenario_key,
+            "Phase": r["Phase"],
+            "Insulation surcharge [%]": r["Insulation surcharge [%]"],
+            "Gross cost [Bn€]": gross_bn,
+            "Net cost [Bn€]": net_bn,
+            "CO2 stored [Mt]": stored,
+            "CO2 utilized [Mt]": utilized,
+            "Total CO2 transported [Mt]": transported,
+            # Bn€ / Mt = 1e9 € / 1e6 t = 1000 €/t
+            "Gross cost per tCO2 transported [€/t]": (gross_bn * 1000.0 / transported) if transported else None,
+            "Net cost per tCO2 transported [€/t]": (net_bn * 1000.0 / transported) if transported else None,
         })
     return pd.DataFrame(rows)
 
@@ -621,6 +663,7 @@ def main():
     network_length = build_network_length_by_year()
     diam_count, diam_length = build_diameter_distribution()
     cost_efficiency = build_cost_efficiency(kpi_summary)
+    cost_per_transported = build_cost_per_transported_co2(kpi_summary)
 
     sc_values, sc_pct = build_cost_category_vs_benchmark(
         cost_category, SUPERCRITICAL_SCENARIOS, SUPERCRITICAL_BENCHMARK)
@@ -693,6 +736,7 @@ def main():
             ("Installed pipe length [km] by diameter", diam_length, True),
         ])
         cost_efficiency.to_excel(writer, sheet_name="Cost efficiency", index=False)
+        cost_per_transported.to_excel(writer, sheet_name="Cost per CO2 transported", index=False)
 
         sc_layout = _write_blocks(writer, "Cost category - supercritical", [
             ("Cost category breakdown [Bn€] -- supercritical scenarios, benchmark = bm_sco2", sc_values, True),
@@ -763,6 +807,11 @@ def main():
     _style_blocks(ws, diam_layout, ws.max_column)
 
     ws = wb["Cost efficiency"]
+    _style_header(ws, ws.max_column)
+    _format_numbers(ws)
+    _autosize(ws)
+
+    ws = wb["Cost per CO2 transported"]
     _style_header(ws, ws.max_column)
     _format_numbers(ws)
     _autosize(ws)
