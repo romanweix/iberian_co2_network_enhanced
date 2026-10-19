@@ -166,7 +166,7 @@ heatmap = ax.pcolormesh(
 )
 
 ax.coastlines(resolution="10m", linewidth=0.8, zorder=2)
-ax.add_feature(cfeature.BORDERS.with_scale("10m"), linewidth=0.5, zorder=2)
+ax.add_feature(cfeature.BORDERS.with_scale("10m"), linewidth=1.0, zorder=2)
 ax.add_geometries(
     admin1_shapes,
     crs=ccrs.PlateCarree(),
