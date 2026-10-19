@@ -1,26 +1,24 @@
 """
-ERA5 Europa Januar Temperaturkarte
-Optimierung:
-- Tagesmittelwerte statt Stundenwerte
-- direkter Mittelwert über Januar
-- 50x50 Raster
-- Ausgabe als NetCDF + Heatmap
+ERA5 Spanien + Portugal Juli Temperaturkarte
+
+Liest die bereits heruntergeladene ERA5-Datei (Tagesmittel),
+mittelt über alle Tage, maskiert alles außer Spanien und Portugal
+und speichert eine Heatmap.
 
 Quelle:
 Copernicus Climate Data Store
 ERA5 Reanalysis
 """
 
-import os
-from datetime import datetime
-
-import cdsapi
 import xarray as xr
 import numpy as np
 
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import cartopy.io.shapereader as shpreader
+import shapely
+from shapely.ops import unary_union
 
 
 # ==========================================================
@@ -29,208 +27,104 @@ import cartopy.feature as cfeature
 
 GRID_SIZE = 250
 
-# Europa
-AREA = [
-    72,    # Nord
-    -25,   # West
-    34,    # Süd
-    45     # Ost
-]
+# Iberische Halbinsel inkl. Balearen (ohne Kanaren): [Nord, West, Süd, Ost]
+AREA = [44.5, -10, 35.5, 5]
 
-DOWNLOAD_FILE = "era5_daily_july_europe.nc"
-OUTPUT_FILE = "era5_july_mean_last5years.nc"
-FIGURE_FILE = "era5_july_heatmap.png"
+COUNTRIES = ["Spain", "Portugal"]
+
+INPUT_FILE = "era5_daily_july_europe.nc"
+FIGURE_FILE = "era5_july_heatmap_iberia.png"
+
+YEARS = "2021–2025"
 
 
 # ==========================================================
-# Jahre automatisch bestimmen
+# Daten laden + Mittelwert
 # ==========================================================
 
-years = [
-    "2021",
-    "2022",
-    "2023",
-    "2024",
-    "2025"
-]
-
-
-
-# ==========================================================
-# Daten laden
-# ==========================================================
-
-print("Lese Daten...")
-
-ds = xr.open_dataset(DOWNLOAD_FILE)
-
-print(ds)
-print(ds.dims)
+ds = xr.open_dataset(INPUT_FILE)
 
 # ERA5 Variable kann je nach CDS-Version anders heißen
-if "2m_temperature" in ds:
-    temp = ds["2m_temperature"]
-
-elif "t2m" in ds:
-    temp = ds["t2m"]
-
-else:
-    raise Exception(
-        f"Temperaturvariable nicht gefunden: {list(ds.data_vars)}"
-    )
-
-
-# Kelvin -> Celsius
-
+temp = ds["t2m"] if "t2m" in ds else ds["2m_temperature"]
 temp = temp - 273.15
 
+time_dim = "valid_time" if "valid_time" in temp.dims else "time"
 
-# ==========================================================
-# Mittelwert über alle Tage und Jahre
-# ==========================================================
-
-print("Berechne Mittelwert...")
-
-# Zeitdimension automatisch bestimmen
-if "time" in temp.dims:
-    time_dim = "time"
-elif "valid_time" in temp.dims:
-    time_dim = "valid_time"
+# ERA5 liefert Breitengrade meist absteigend (Nord -> Süd)
+if temp.latitude[0] > temp.latitude[-1]:
+    lat_slice = slice(AREA[0], AREA[2])
 else:
-    raise ValueError(f"Keine Zeitdimension gefunden. Vorhanden: {temp.dims}")
+    lat_slice = slice(AREA[2], AREA[0])
 
-temp_mean = temp.mean(dim=time_dim)
-
-
-# ==========================================================
-# Auf 50x50 Raster bringen
-# ==========================================================
-
-print("Erzeuge 50x50 Raster...")
-
-lat_new = np.linspace(
-    float(temp_mean.latitude.max()),
-    float(temp_mean.latitude.min()),
-    GRID_SIZE
-)
-
-lon_new = np.linspace(
-    float(temp_mean.longitude.min()),
-    float(temp_mean.longitude.max()),
-    GRID_SIZE
-)
-
-
-temp_grid = temp_mean.interp(
-    latitude=lat_new,
-    longitude=lon_new
-)
+temp_mean = temp.sel(
+    latitude=lat_slice,
+    longitude=slice(AREA[1], AREA[3])
+).mean(dim=time_dim)
 
 
 # ==========================================================
-# Ergebnis speichern
+# Feineres Raster + Maske Spanien/Portugal
 # ==========================================================
 
-temp_grid.to_netcdf(
-    OUTPUT_FILE
+lat_new = np.linspace(AREA[0], AREA[2], GRID_SIZE)
+lon_new = np.linspace(AREA[1], AREA[3], GRID_SIZE)
+
+temp_grid = temp_mean.interp(latitude=lat_new, longitude=lon_new)
+
+shapefile = shpreader.natural_earth(
+    resolution="10m",
+    category="cultural",
+    name="admin_0_countries"
 )
 
-print(
-    "Gespeichert:",
-    OUTPUT_FILE
-)
+iberia_shape = unary_union([
+    country.geometry
+    for country in shpreader.Reader(shapefile).records()
+    if country.attributes["NAME_EN"] in COUNTRIES
+])
 
+lon_2d, lat_2d = np.meshgrid(lon_new, lat_new)
+inside = shapely.contains_xy(iberia_shape, lon_2d, lat_2d)
+
+temp_grid = temp_grid.where(inside)
 
 
 # ==========================================================
-# Heatmap Europa
+# Heatmap
 # ==========================================================
 
-print("Erzeuge Karte...")
+plt.figure(figsize=(12, 8))
 
+ax = plt.axes(projection=ccrs.PlateCarree())
+ax.set_extent([AREA[1], AREA[3], AREA[2], AREA[0]], crs=ccrs.PlateCarree())
 
-plt.figure(
-    figsize=(12, 8)
-)
-
-ax = plt.axes(
-    projection=ccrs.PlateCarree()
-)
-
-ax.set_extent(
-    [-25, 45, 34, 72]
-)
-
+# Hintergrund unter, Linien über der Heatmap
+ax.add_feature(cfeature.LAND, facecolor="#eeeeee", zorder=0)
+ax.add_feature(cfeature.OCEAN, facecolor="#dbeeff", zorder=0)
 
 heatmap = ax.pcolormesh(
     temp_grid.longitude,
     temp_grid.latitude,
     temp_grid,
-
     cmap="coolwarm",
-
     shading="auto",
-
-    transform=ccrs.PlateCarree()
+    transform=ccrs.PlateCarree(),
+    zorder=1
 )
 
+ax.coastlines(resolution="10m", linewidth=0.8, zorder=2)
+ax.add_feature(cfeature.BORDERS.with_scale("10m"), linewidth=0.5, zorder=2)
 
-# Kartenelemente
-
-ax.add_feature(
-    cfeature.LAND,
-    facecolor="#eeeeee"
-)
-
-ax.add_feature(
-    cfeature.OCEAN,
-    facecolor="#dbeeff"
-)
-
-ax.coastlines(
-    resolution="50m",
-    linewidth=0.8
-)
-
-ax.add_feature(
-    cfeature.BORDERS,
-    linewidth=0.5
-)
-
-
-# Farbskala
-
-cbar = plt.colorbar(
-    heatmap,
-    orientation="vertical",
-    shrink=0.7
-)
-
-cbar.set_label(
-    "Mittlere Julitemperatur [°C]"
-)
-
+cbar = plt.colorbar(heatmap, orientation="vertical", shrink=0.7)
+cbar.set_label("Mittlere Julitemperatur [°C]")
 
 plt.title(
-    "Europa: mittlere Julitemperatur\n"
-    f"ERA5 Mittel {years[-1]}–{years[0]}"
+    "Spanien & Portugal: mittlere Julitemperatur\n"
+    f"ERA5 Mittel {YEARS}"
 )
-
 
 plt.tight_layout()
-
-
-plt.savefig(
-    FIGURE_FILE,
-    dpi=300,
-    bbox_inches="tight"
-)
-
-
+plt.savefig(FIGURE_FILE, dpi=300, bbox_inches="tight")
 plt.show()
 
-
-print(
-    "Fertig:",
-    FIGURE_FILE
-)
+print("Fertig:", FIGURE_FILE)
