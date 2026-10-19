@@ -12,12 +12,14 @@ ERA5 Reanalysis
 
 import xarray as xr
 import numpy as np
+import pandas as pd
 
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import cartopy.io.shapereader as shpreader
 import shapely
+from shapely import wkt
 from shapely.ops import unary_union
 
 
@@ -33,6 +35,8 @@ AREA = [44.5, -10, 35.5, 5]
 COUNTRIES = ["Spain", "Portugal"]
 
 INPUT_FILE = "era5_daily_july_europe.nc"
+NETWORK_FILE = "iberian_co2_network_data.xlsx"
+NETWORK_SHEET = "Pipeline candidates"
 FIGURE_FILE = "era5_july_heatmap_iberia.png"
 
 YEARS = "2021–2025"
@@ -95,7 +99,12 @@ temp_grid = temp_grid.where(inside)
 
 plt.figure(figsize=(12, 8))
 
-ax = plt.axes(projection=ccrs.PlateCarree())
+# Winkeltreue Projektion -> keine Ost-West-Streckung wie bei PlateCarree
+ax = plt.axes(projection=ccrs.LambertConformal(
+    central_longitude=-3.5,
+    central_latitude=40,
+    standard_parallels=(37, 43)
+))
 ax.set_extent([AREA[1], AREA[3], AREA[2], AREA[0]], crs=ccrs.PlateCarree())
 
 # Hintergrund unter, Linien über der Heatmap
@@ -114,6 +123,20 @@ heatmap = ax.pcolormesh(
 
 ax.coastlines(resolution="10m", linewidth=0.8, zorder=2)
 ax.add_feature(cfeature.BORDERS.with_scale("10m"), linewidth=0.5, zorder=2)
+
+# Kandidaten-Pipelinenetz (Onshore durchgezogen, Offshore gestrichelt)
+network = pd.read_excel(NETWORK_FILE, sheet_name=NETWORK_SHEET)
+
+for _, pipe in network.iterrows():
+    lon, lat = wkt.loads(pipe["geometry"]).xy
+    ax.plot(
+        lon, lat,
+        color="black",
+        linewidth=0.8,
+        linestyle="-" if pipe["Transport method"] == "Onshore" else "--",
+        transform=ccrs.PlateCarree(),
+        zorder=3
+    )
 
 cbar = plt.colorbar(heatmap, orientation="vertical", shrink=0.7)
 cbar.set_label("Mittlere Julitemperatur [°C]")
