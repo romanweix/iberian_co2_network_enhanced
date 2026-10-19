@@ -198,10 +198,14 @@ ax.scatter(
     zorder=4
 )
 
-cbar = plt.colorbar(heatmap, orientation="vertical", shrink=0.7)
-cbar.set_label(f"Mean {MONTH_NAME} temperature [°C]")
+# Colorbar exactly as tall as the map (map size is fixed by the projection aspect)
+ax.apply_aspect()
+map_pos = ax.get_position()
+cax = plt.gcf().add_axes([map_pos.x1 + 0.015, map_pos.y0, 0.02, map_pos.height])
 
-plt.tight_layout()
+cbar = plt.colorbar(heatmap, cax=cax, orientation="vertical")
+cbar.set_label("Temperature [°C]", fontsize=16)
+cbar.ax.tick_params(labelsize=14)
 plt.savefig(FIGURE_FILE, dpi=300, bbox_inches="tight")
 plt.show()
 
