@@ -94,6 +94,34 @@ temp_grid = temp_grid.where(inside)
 
 
 # ==========================================================
+# First-level administrative regions
+# (Spain: autonomous communities, Portugal: districts)
+# ==========================================================
+
+admin1_file = shpreader.natural_earth(
+    resolution="10m",
+    category="cultural",
+    name="admin_1_states_provinces"
+)
+
+admin1_records = [
+    record for record in shpreader.Reader(admin1_file).records()
+    if record.attributes["admin"] in COUNTRIES
+]
+
+# Natural Earth only holds Spanish provinces -> merge them per autonomous community
+spain_regions = {}
+for record in admin1_records:
+    if record.attributes["admin"] == "Spain":
+        spain_regions.setdefault(record.attributes["region"], []).append(record.geometry)
+
+admin1_shapes = [unary_union(geoms) for geoms in spain_regions.values()] + [
+    record.geometry for record in admin1_records
+    if record.attributes["admin"] == "Portugal"
+]
+
+
+# ==========================================================
 # Candidate pipeline network
 # ==========================================================
 
@@ -139,6 +167,14 @@ heatmap = ax.pcolormesh(
 
 ax.coastlines(resolution="10m", linewidth=0.8, zorder=2)
 ax.add_feature(cfeature.BORDERS.with_scale("10m"), linewidth=0.5, zorder=2)
+ax.add_geometries(
+    admin1_shapes,
+    crs=ccrs.PlateCarree(),
+    facecolor="none",
+    edgecolor="black",
+    linewidth=0.25,
+    zorder=2
+)
 
 # Candidate pipeline network (onshore solid, offshore dashed)
 for _, pipe in network.iterrows():
@@ -154,8 +190,10 @@ for _, pipe in network.iterrows():
 
 ax.scatter(
     node_lon, node_lat,
-    s=12,
+    s=14,
     color="black",
+    edgecolors="white",
+    linewidths=0.4,
     transform=ccrs.PlateCarree(),
     zorder=4
 )
