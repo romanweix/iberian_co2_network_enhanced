@@ -190,7 +190,7 @@ for _, pipe in network.iterrows():
 
 ax.scatter(
     node_lon, node_lat,
-    s=14,
+    s=30,
     color="black",
     edgecolors="white",
     linewidths=0.4,
